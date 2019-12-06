@@ -1,0 +1,3 @@
+[submodule "submodules/sph-sc-lib"]
+	path = submodules/sph-sc-lib
+	url = https://github.com/sph-mn/sph-sc-lib

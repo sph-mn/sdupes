@@ -1,0 +1,14 @@
+#!/bin/sh
+
+optimisation=3
+warnings="-Wunused-label -Wunused-value -Wunused-variable"
+gcc_options="$warnings -Wfatal-errors -std=c11 -O$optimisation"
+c=source/c-precompiled
+
+compile_sdupes() {
+  gcc "$c/main.c" -o temp/sdupes $gcc_options
+}
+
+mkdir -p temp &&
+compile_sdupes $@ &&
+chmod 755 temp/*

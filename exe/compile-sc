@@ -1,0 +1,36 @@
+#!/bin/sh
+
+# description
+# * compiles the sc source code to c
+# dependencies
+# * sph-sc
+# * clang-format
+
+root="$PWD"
+s=source/sc
+sm="$s/main"
+c="$root/source/c-precompiled"
+export SC_LOAD_PATH="$root/$s"
+
+copy_submodules() {
+  # copy code files from submodules.
+  # to not have the whole submodule repository in the source directory
+  a=submodules/sph-sc-lib/source/sc/main
+  f="$s/foreign"
+  mkdir -p "$f/sph" &&
+  cp --update --target-directory="$f/sph" \
+     "$a/status.sc" "$a/i-array.sc" "$a/imht-set.sc" \
+     "$a/helper.sc"
+}
+
+compile_sc() {
+  # create the c source code
+  copy_submodules &&
+  cd "$s" &&
+  find -type f -name "*.sc" -exec sc --parents '{}' "$c" \; &&
+  cd "$root" &&
+  find "$c" -type f -exec ./exe/format-c -i '{}' \;
+}
+
+mkdir -p "$c" &&
+compile_sc $@
