@@ -19,7 +19,7 @@ copy_submodules() {
   f="$s/foreign"
   mkdir -p "$f/sph" &&
   cp --update --target-directory="$f/sph" \
-     "$a/status.sc" "$a/i-array.sc" "$a/imht-set.sc" \
+     "$a/status.sc" "$a/i-array.sc" "$a/hashtable.sc" \
      "$a/helper.sc"
 }
 
