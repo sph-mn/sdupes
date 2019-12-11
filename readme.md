@@ -16,8 +16,7 @@ at this point in time, many existing file duplication detectors are slow or over
 ~~~
 sh ./exe/compile-c
 ~~~
-this should build the file `temp/sdupes`, which is the final executable and can be taken and copied anywhere, for example into /usr/bin (as root), then you have sdupes as a command on the command-line.
-
+this should build the file `temp/sdupes`, which is the final executable and can be taken and copied anywhere, for example into `/usr/bin` (as root), then you have sdupes as a command on the command-line.
 
 # usage
 ~~~
@@ -26,23 +25,20 @@ find /home/myuser/directory-with-1000s-of-huge-files | sdupes
 
 in case duplicates are found, the result looks similar to this
 ~~~
-/home/user/duplicates/15418__340.png
-/home/user/15418__340.png
+/home/user/xy/154333__340.png
+/home/user/15418340.png
 
-/home/user/duplicates/1477673299231.png
+/home/user/xz/2343299231.png
 /home/user/1477673299231.png
 
-/home/user/duplicates/wz79o7vixhy11.jpg
+/home/user/yy/wz79o7vixhy11.jpg
 /home/user/wz79o7vixhy11.jpg
 ~~~
 
-if nothing is found, nothing is displayed.
-
-sdupes has no cli help or options.
+if nothing is found, nothing is displayed. sdupes has no cli help or options.
 
 ## how to work with the result
 there is no prepared solution yet for further using the results.
-
 something like this can work and excludes the first found duplicate, showing only excess duplicate files:
 ~~~
 find path | temp/sdupes | ruby -e '$stdin.read.split("\n\n").each{|a| a = a.split("\n"); a.shift(); puts a.join("\n")}'
@@ -54,7 +50,7 @@ find path | temp/sdupes | ruby -e '$stdin.read.split("\n\n").each{|a| a = a.spli
 * currently written in c via sc, which maps scheme-like expressions to c
 
 # possible enhancements
-* byte-by-byte comparison - if needed. but that is resource intensive
+* byte-by-byte comparison - if needed. but it is resource intensive
 * cli --help option
 * output format that lists only excess duplicates and can be passed to xargs
 
