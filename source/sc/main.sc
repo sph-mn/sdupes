@@ -1,4 +1,8 @@
-(pre-define _POSIX_C_SOURCE 201000 input-path-count-min 1024 input-path-count-max 0)
+(pre-define
+  _POSIX_C_SOURCE 201000
+  input-path-count-min 1024
+  input-path-count-max 0
+  part-checksum-page-count 2)
 
 (pre-include "inttypes.h" "stdio.h"
   "string.h" "errno.h" "sys/stat.h"
@@ -49,6 +53,7 @@
   memory-error (begin (error "%s" "memory allocation failed") (exit 1)))
 
 (define (get-sizes paths) (hashtable-64-ids-t paths-t)
+  "the result will only contain ids of regular files (no directories, symlinks or similar)"
   (declare
     status int
     existing id-t*
@@ -71,7 +76,6 @@
         (set second-existing (hashtable-64-ids-get second-ht stat-info.st-size))
         (if second-existing
           (begin
-            (printf "%lu")
             (sc-comment "resize value if necessary")
             (if (= (i-array-length *second-existing) (i-array-max-length *second-existing))
               (if (ids-resize second-existing (* 2 (i-array-max-length *second-existing)))
@@ -87,20 +91,43 @@
   (hashtable-64-id-destroy first-ht)
   (return second-ht))
 
-(define (get-checksum path result) (uint8-t uint8-t* checksum-t*)
-  (declare file int file-buffer uint8-t* stat-info (struct stat) temp (array uint64-t 2))
+(define (get-checksum path center-page-count page-size result)
+  (uint8-t uint8-t* size-t size-t checksum-t*)
+  "center-page-count and page-size are optional and can be zero.
+   if center-page-count is not zero, only a centered part of the file is checksummed.
+   in this case page-size must also be non-zero"
+  (declare
+    file int
+    file-buffer uint8-t*
+    stat-info (struct stat)
+    temp (array uint64-t 2)
+    part-start size-t
+    part-length size-t)
   (set file (open path O-RDONLY))
   (if (< file 0) (begin (error "%s %s" "couldnt open file at " path) (return 1)))
   (if (< (fstat file &stat-info) 0) (begin (error "%s %s" "couldnt stat file at " path) (return 1)))
-  (set file-buffer (mmap 0 stat-info.st-size PROT-READ MAP-SHARED file 0))
-  (MurmurHash3_x64_128 file-buffer stat-info.st-size 0 temp)
+  (if stat-info.st-size
+    (if center-page-count
+      (if (> stat-info.st-size (* 2 page-size part-checksum-page-count))
+        (begin
+          (set
+            part-start (/ stat-info.st-size page-size)
+            part-start (if* (> 3 part-start) page-size (* page-size (/ part-start 2)))
+            part-length (* page-size part-checksum-page-count))
+          (if (> part-length stat-info.st-size) (set part-length (- stat-info.st-size part-start))))
+        (begin (set result:a 0 result:b 0) (return 0)))
+      (set part-start 0 part-length stat-info.st-size))
+    (begin (set result:a 0 result:b 0) (return 0)))
+  (set file-buffer (mmap 0 part-length PROT-READ MAP-SHARED file part-start))
+  (MurmurHash3_x64_128 file-buffer part-length 0 temp)
   (set result:a (array-get temp 0) result:b (array-get temp 1))
-  (munmap file-buffer stat-info.st-size)
+  (munmap file-buffer part-length)
   (close file)
   (return 0))
 
-(define (get-checksums paths ids) (hashtable-checksum-ids-t paths-t ids-t)
-  "assumes that paths are regular files"
+(define (get-checksums paths ids center-page-count page-size)
+  (hashtable-checksum-ids-t paths-t ids-t size-t size-t)
+  "assumes that all ids are for regular files"
   (declare
     checksum checksum-t
     existing id-t*
@@ -113,7 +140,8 @@
       (hashtable-checksum-ids-new (i-array-length ids) &second-ht))
     memory-error)
   (while (i-array-in-range ids)
-    (if (get-checksum (i-array-get-at paths (i-array-get ids)) &checksum)
+    (if
+      (get-checksum (i-array-get-at paths (i-array-get ids)) center-page-count page-size &checksum)
       (error "%s" "couldnt calculate checksum for " (i-array-get-at paths (i-array-get ids))))
     (set existing (hashtable-checksum-id-get first-ht checksum))
     (if existing
@@ -139,22 +167,41 @@
   (declare
     sizes-ht hashtable-64-ids-t
     checksums-ht hashtable-checksum-ids-t
+    part-checksums-ht hashtable-checksum-ids-t
     sizes-i size-t
-    checksums-i size-t)
+    part-checksums-i size-t
+    checksums-i size-t
+    page-size size-t)
+  (set page-size (sysconf _SC-PAGE-SIZE))
   (i-array-declare paths paths-t)
   (if (get-input-paths &paths) memory-error)
+  (sc-comment "cluster by size")
   (set sizes-ht (get-sizes paths))
   (for ((set sizes-i 0) (< sizes-i sizes-ht.size) (set+ sizes-i 1))
     (if (array-get sizes-ht.flags sizes-i)
       (begin
-        (set checksums-ht (get-checksums paths (array-get sizes-ht.values sizes-i)))
-        (for ((set checksums-i 0) (< checksums-i checksums-ht.size) (set+ checksums-i 1))
-          (if (array-get checksums-ht.flags checksums-i)
+        (sc-comment "cluster by center portion checksum")
+        (set part-checksums-ht
+          (get-checksums paths (array-get sizes-ht.values sizes-i)
+            part-checksum-page-count page-size))
+        (for
+          ( (set part-checksums-i 0) (< part-checksums-i part-checksums-ht.size)
+            (set+ part-checksums-i 1))
+          (if (array-get part-checksums-ht.flags part-checksums-i)
             (begin
-              (printf "\n")
-              (while (i-array-in-range (array-get checksums-ht.values checksums-i))
-                (printf "%s\n"
-                  (i-array-get-at paths (i-array-get (array-get checksums-ht.values checksums-i))))
-                (i-array-forward (array-get checksums-ht.values checksums-i))))))
-        (hashtable-checksum-ids-destroy checksums-ht))))
+              (sc-comment "cluster by complete file checksum")
+              (set checksums-ht
+                (get-checksums paths (array-get part-checksums-ht.values part-checksums-i) 0 0))
+              (sc-comment "display found duplicates")
+              (for ((set checksums-i 0) (< checksums-i checksums-ht.size) (set+ checksums-i 1))
+                (if (array-get checksums-ht.flags checksums-i)
+                  (begin
+                    (printf "\n")
+                    (while (i-array-in-range (array-get checksums-ht.values checksums-i))
+                      (printf "%s\n"
+                        (i-array-get-at paths
+                          (i-array-get (array-get checksums-ht.values checksums-i))))
+                      (i-array-forward (array-get checksums-ht.values checksums-i))))))
+              (hashtable-checksum-ids-destroy checksums-ht))))
+        (hashtable-checksum-ids-destroy part-checksums-ht))))
   (return 0))

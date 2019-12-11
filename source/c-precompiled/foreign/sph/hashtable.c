@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <inttypes.h>
-/* a macro that defines hash-table data types for arbitrary key/value types and values,
-using linear probing for collision resolve,
-with hash and equal functions customisable by defining macros and re-including the source. */
+/* a macro that defines hash-table data types for arbitrary key/value types,
+with linear probing for collision resolve and hash and equal functions customisable
+by defining macro variables and re-including the source. */
 #define hashtable_hash_integer(key, hashtable) (key % hashtable.size)
 #define hashtable_equal_integer(key_a, key_b) (key_a == key_b)
 #ifndef hashtable_size_factor
@@ -14,21 +14,17 @@ with hash and equal functions customisable by defining macros and re-including t
 #ifndef hashtable_equal
 #define hashtable_equal hashtable_equal_integer
 #endif
-uint32_t hashtable_primes[] = { 0, 53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317, 196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653, 100663319, 201326611, 402653189, 805306457, 1610612741 };
-uint32_t* hashtable_primes_end = (hashtable_primes + 26);
+uint32_t hashtable_primes[] = { 53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317, 196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653, 100663319, 201326611, 402653189, 805306457, 1610612741 };
+uint32_t* hashtable_primes_end = (hashtable_primes + 25);
 size_t hashtable_calculate_size(size_t min_size) {
   min_size = (hashtable_size_factor * min_size);
-  uint32_t* primes = hashtable_primes;
-  while ((primes < hashtable_primes_end)) {
+  uint32_t* primes;
+  for (primes = hashtable_primes; (primes <= hashtable_primes_end); primes += 1) {
     if (min_size <= *primes) {
       return ((*primes));
-    } else {
-      primes = (1 + primes);
     };
   };
-  if (min_size <= *primes) {
-    return ((*primes));
-  };
+  /* if no prime has been found, make size at least an odd number */
   return ((1 | min_size));
 }
 #define hashtable_declare_type(name, key_type, value_type) \

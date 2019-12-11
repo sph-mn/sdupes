@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 201000
 #define input_path_count_min 1024
 #define input_path_count_max 0
+#define part_checksum_page_count 2
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -68,6 +69,7 @@ uint8_t get_input_paths(paths_t* output) {
 #define memory_error \
   error("%s", "memory allocation failed"); \
   exit(1);
+/** the result will only contain ids of regular files (no directories, symlinks or similar) */
 hashtable_64_ids_t get_sizes(paths_t paths) {
   int status;
   id_t* existing;
@@ -92,7 +94,6 @@ hashtable_64_ids_t get_sizes(paths_t paths) {
     if (existing) {
       second_existing = hashtable_64_ids_get(second_ht, (stat_info.st_size));
       if (second_existing) {
-        printf("%lu");
         /* resize value if necessary */
         if (i_array_length((*second_existing)) == i_array_max_length((*second_existing))) {
           if (ids_resize(second_existing, (2 * i_array_max_length((*second_existing))))) {
@@ -116,11 +117,16 @@ hashtable_64_ids_t get_sizes(paths_t paths) {
   hashtable_64_id_destroy(first_ht);
   return (second_ht);
 }
-uint8_t get_checksum(uint8_t* path, checksum_t* result) {
+/** center-page-count and page-size are optional and can be zero.
+   if center-page-count is not zero, only a centered part of the file is checksummed.
+   in this case page-size must also be non-zero */
+uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, checksum_t* result) {
   int file;
   uint8_t* file_buffer;
   struct stat stat_info;
   uint64_t temp[2];
+  size_t part_start;
+  size_t part_length;
   file = open(path, O_RDONLY);
   if (file < 0) {
     error("%s %s", "couldnt open file at ", path);
@@ -130,16 +136,39 @@ uint8_t get_checksum(uint8_t* path, checksum_t* result) {
     error("%s %s", "couldnt stat file at ", path);
     return (1);
   };
-  file_buffer = mmap(0, (stat_info.st_size), PROT_READ, MAP_SHARED, file, 0);
-  MurmurHash3_x64_128(file_buffer, (stat_info.st_size), 0, temp);
+  if (stat_info.st_size) {
+    if (center_page_count) {
+      if (stat_info.st_size > (2 * page_size * part_checksum_page_count)) {
+        part_start = (stat_info.st_size / page_size);
+        part_start = ((3 > part_start) ? page_size : (page_size * (part_start / 2)));
+        part_length = (page_size * part_checksum_page_count);
+        if (part_length > stat_info.st_size) {
+          part_length = (stat_info.st_size - part_start);
+        };
+      } else {
+        result->a = 0;
+        result->b = 0;
+        return (0);
+      };
+    } else {
+      part_start = 0;
+      part_length = stat_info.st_size;
+    };
+  } else {
+    result->a = 0;
+    result->b = 0;
+    return (0);
+  };
+  file_buffer = mmap(0, part_length, PROT_READ, MAP_SHARED, file, part_start);
+  MurmurHash3_x64_128(file_buffer, part_length, 0, temp);
   result->a = temp[0];
   result->b = temp[1];
-  munmap(file_buffer, (stat_info.st_size));
+  munmap(file_buffer, part_length);
   close(file);
   return (0);
 }
-/** assumes that paths are regular files */
-hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids) {
+/** assumes that all ids are for regular files */
+hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_page_count, size_t page_size) {
   checksum_t checksum;
   id_t* existing;
   hashtable_checksum_id_t first_ht;
@@ -150,7 +179,7 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids) {
     memory_error;
   };
   while (i_array_in_range(ids)) {
-    if (get_checksum((i_array_get_at(paths, (i_array_get(ids)))), (&checksum))) {
+    if (get_checksum((i_array_get_at(paths, (i_array_get(ids)))), center_page_count, page_size, (&checksum))) {
       error("%s", "couldnt calculate checksum for ", (i_array_get_at(paths, (i_array_get(ids)))));
     };
     existing = hashtable_checksum_id_get(first_ht, checksum);
@@ -182,26 +211,40 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids) {
 int main() {
   hashtable_64_ids_t sizes_ht;
   hashtable_checksum_ids_t checksums_ht;
+  hashtable_checksum_ids_t part_checksums_ht;
   size_t sizes_i;
+  size_t part_checksums_i;
   size_t checksums_i;
+  size_t page_size;
+  page_size = sysconf(_SC_PAGE_SIZE);
   i_array_declare(paths, paths_t);
   if (get_input_paths((&paths))) {
     memory_error;
   };
+  /* cluster by size */
   sizes_ht = get_sizes(paths);
   for (sizes_i = 0; (sizes_i < sizes_ht.size); sizes_i += 1) {
     if ((sizes_ht.flags)[sizes_i]) {
-      checksums_ht = get_checksums(paths, ((sizes_ht.values)[sizes_i]));
-      for (checksums_i = 0; (checksums_i < checksums_ht.size); checksums_i += 1) {
-        if ((checksums_ht.flags)[checksums_i]) {
-          printf("\n");
-          while (i_array_in_range(((checksums_ht.values)[checksums_i]))) {
-            printf("%s\n", (i_array_get_at(paths, (i_array_get(((checksums_ht.values)[checksums_i]))))));
-            i_array_forward(((checksums_ht.values)[checksums_i]));
+      /* cluster by center portion checksum */
+      part_checksums_ht = get_checksums(paths, ((sizes_ht.values)[sizes_i]), part_checksum_page_count, page_size);
+      for (part_checksums_i = 0; (part_checksums_i < part_checksums_ht.size); part_checksums_i += 1) {
+        if ((part_checksums_ht.flags)[part_checksums_i]) {
+          /* cluster by complete file checksum */
+          checksums_ht = get_checksums(paths, ((part_checksums_ht.values)[part_checksums_i]), 0, 0);
+          /* display found duplicates */
+          for (checksums_i = 0; (checksums_i < checksums_ht.size); checksums_i += 1) {
+            if ((checksums_ht.flags)[checksums_i]) {
+              printf("\n");
+              while (i_array_in_range(((checksums_ht.values)[checksums_i]))) {
+                printf("%s\n", (i_array_get_at(paths, (i_array_get(((checksums_ht.values)[checksums_i]))))));
+                i_array_forward(((checksums_ht.values)[checksums_i]));
+              };
+            };
           };
+          hashtable_checksum_ids_destroy(checksums_ht);
         };
       };
-      hashtable_checksum_ids_destroy(checksums_ht);
+      hashtable_checksum_ids_destroy(part_checksums_ht);
     };
   };
   return (0);

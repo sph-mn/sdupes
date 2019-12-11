@@ -1,8 +1,8 @@
 (pre-include "stdlib.h" "inttypes.h")
 
-(sc-comment "a macro that defines hash-table data types for arbitrary key/value types and values,"
-  "using linear probing for collision resolve,"
-  "with hash and equal functions customisable by defining macros and re-including the source.")
+(sc-comment "a macro that defines hash-table data types for arbitrary key/value types,"
+  "with linear probing for collision resolve and hash and equal functions customisable"
+  "by defining macro variables and re-including the source.")
 
 (pre-define
   ; example hashing code
@@ -17,23 +17,22 @@
 (declare hashtable-primes
   (array uint32-t ()
     ; from https://planetmath.org/goodhashtableprimes
-    #f 53 97
-    193 389 769
-    1543 3079 6151
-    12289 24593 49157
-    98317 196613 393241
-    786433 1572869 3145739
-    6291469 12582917 25165843 50331653 100663319 201326611 402653189 805306457 1610612741))
+    53 97 193
+    389 769 1543
+    3079 6151 12289
+    24593 49157 98317
+    196613 393241 786433
+    1572869 3145739 6291469
+    12582917 25165843 50331653 100663319 201326611 402653189 805306457 1610612741))
 
-(define hashtable-primes-end uint32-t* (+ hashtable-primes 26))
+(define hashtable-primes-end uint32-t* (+ hashtable-primes 25))
 
 (define (hashtable-calculate-size min-size) (size-t size-t)
   (set min-size (* hashtable-size-factor min-size))
-  (define primes uint32-t* hashtable-primes)
-  (while (< primes hashtable-primes-end)
-    (if (<= min-size *primes) (return *primes) (set primes (+ 1 primes))))
-  (if (<= min-size *primes) (return *primes))
-  ; if no prime has been found, use size-factor times size made odd as a best guess
+  (declare primes uint32-t*)
+  (for ((set primes hashtable-primes) (<= primes hashtable-primes-end) (set+ primes 1))
+    (if (<= min-size *primes) (return *primes)))
+  (sc-comment "if no prime has been found, make size at least an odd number")
   (return (bit-or 1 min-size)))
 
 (pre-define (hashtable-declare-type name key-type value-type)
