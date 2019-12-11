@@ -1,9 +1,9 @@
-# sdupes - superfast file duplicate detection
+# sdupes - fast file duplicate detection
 
 at this point, many existing file duplication detectors are slow or overengineered. sdupes implements a kind of minimal duplicate file finder that does just one thing.
 
 * input: a list of newline separated file paths read from standard input. this way the paths can be pre-filtered, for example with "find"
-* processing: group paths by identical size, then identical center portion, then identical checksum (to be implemented: possibly murmur3)
+* processing: group paths by identical size, then identical center portion, then identical murmur3 checksum
 * output: double-newline separated newline separated lists of duplicates
 
 # dependencies
@@ -18,7 +18,7 @@ at this point, many existing file duplication detectors are slow or overengineer
 * currently written in c via sc, which maps scheme-like expressions to c
 
 # possible enhancements
-* byte-by-byte comparison is costly, is it needed?
+* byte-by-byte comparison is costly, is it needed
 
 # license
 gpl3+
