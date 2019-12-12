@@ -51,7 +51,7 @@
       (if (not values) (begin (free keys) (free flags) (return 1)))
       (struct-set *result flags flags keys keys values values size min-size)
       (return 0))
-    (define ((pre-concat name _destroy) a) (void (pre-concat name _t))
+    (define ((pre-concat name _free) a) (void (pre-concat name _t))
       (begin (free a.values) (free a.keys) (free a.flags)))
     (define ((pre-concat name _get) a key) (value-type* (pre-concat name _t) key-type)
       "returns the address of the value in the hash table, 0 if it was not found"

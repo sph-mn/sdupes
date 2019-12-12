@@ -23,36 +23,29 @@ this should build the file `temp/sdupes`, which is the final executable and can 
 find /home/myuser/directory-with-1000s-of-huge-files | sdupes
 ~~~
 
-in case duplicates are found, the result looks similar to this
-~~~
-/home/user/xy/154333__340.png
-/home/user/15418340.png
+lists excess duplicate files. one file is always left out of each set except when --cluster is used.
 
-/home/user/xz/2343299231.png
-/home/user/1477673299231.png
-
-/home/user/yy/wz79o7vixhy11.jpg
-/home/user/wz79o7vixhy11.jpg
+`sdupes --help`
+~~~
+usage: sdupes
+description
+  read file paths from standard input and display excess duplicate files, each set sorted by creation time ascending.
+  considers only regular files. files are considered duplicate if they have the same size and murmur3 hash
+options
+  --help, -h  display this help text
+  --cluster, -c  display all duplicate paths, two newlines between each set
+  --null, -n  for results: use the null byte as path delimiter, two null bytes between each set
 ~~~
 
-if nothing is found, nothing is displayed. sdupes has no cli help or options.
-
-## how to work with the result
-there is no prepared solution yet for further using the results.
-something like this can work and excludes the first found duplicate, showing only excess duplicate files:
-~~~
-find path | temp/sdupes | ruby -e '$stdin.read.split("\n\n").each{|a| a = a.split("\n"); a.shift(); puts a.join("\n")}'
-~~~
+if nothing is found, nothing is displayed.
 
 # technical details
 * all input path names are loaded into memory
 * an original, tiny hashtable and array implementation from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) is used
-* currently written in c via sc, which maps scheme-like expressions to c
+* currently written in c via sc, which just maps scheme-like expressions to c
 
 # possible enhancements
 * byte-by-byte comparison - if needed. but it is resource intensive
-* cli --help option
-* output format that lists only excess duplicates and can be passed to xargs
 
 # license
 gpl3+

@@ -60,7 +60,7 @@ size_t hashtable_calculate_size(size_t min_size) {
     (*result).size = min_size; \
     return (0); \
   } \
-  void name##_destroy(name##_t a) { \
+  void name##_free(name##_t a) { \
     free((a.values)); \
     free((a.keys)); \
     free((a.flags)); \
