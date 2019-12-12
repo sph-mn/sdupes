@@ -20,7 +20,7 @@ copy_submodules() {
   mkdir -p "$f/sph" &&
   cp --update --target-directory="$f/sph" \
      "$a/status.sc" "$a/i-array.sc" "$a/hashtable.sc" \
-     "$a/helper.sc"
+     "$a/helper.sc" "$a/quicksort.sc"
 }
 
 compile_sc() {

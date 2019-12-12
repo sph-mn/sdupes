@@ -129,12 +129,12 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
   size_t part_length;
   file = open(path, O_RDONLY);
   if (file < 0) {
-    error("%s %s", "couldnt open file at ", path);
+    error("couldnt open %s %s", (strerror(errno)), path);
     return (1);
   };
   if (fstat(file, (&stat_info)) < 0) {
-    error("%s %s", "couldnt stat file at ", path);
-    return (1);
+    error("couldnt stat %s %s", (strerror(errno)), path);
+    goto error;
   };
   if (stat_info.st_size) {
     if (center_page_count) {
@@ -148,7 +148,7 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
       } else {
         result->a = 0;
         result->b = 0;
-        return (0);
+        goto exit;
       };
     } else {
       part_start = 0;
@@ -157,15 +157,23 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
   } else {
     result->a = 0;
     result->b = 0;
-    return (0);
+    goto exit;
   };
   file_buffer = mmap(0, part_length, PROT_READ, MAP_SHARED, file, part_start);
+  if (0 > file_buffer) {
+    error("%s %s\n", (strerror(errno)), path);
+    goto error;
+  };
   MurmurHash3_x64_128(file_buffer, part_length, 0, temp);
   result->a = temp[0];
   result->b = temp[1];
   munmap(file_buffer, part_length);
+exit:
   close(file);
   return (0);
+error:
+  close(file);
+  return (1);
 }
 /** assumes that all ids are for regular files */
 hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_page_count, size_t page_size) {
@@ -206,6 +214,7 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_p
     };
     i_array_forward(ids);
   };
+  hashtable_checksum_id_destroy(first_ht);
   return (second_ht);
 }
 int main() {
@@ -223,6 +232,7 @@ int main() {
   };
   /* cluster by size */
   sizes_ht = get_sizes(paths);
+  /* hashtable value i-arrays are not explicity freed */
   for (sizes_i = 0; (sizes_i < sizes_ht.size); sizes_i += 1) {
     if ((sizes_ht.flags)[sizes_i]) {
       /* cluster by center portion checksum */
@@ -234,7 +244,7 @@ int main() {
           /* display found duplicates */
           for (checksums_i = 0; (checksums_i < checksums_ht.size); checksums_i += 1) {
             if ((checksums_ht.flags)[checksums_i]) {
-              printf("\n");
+              i_array_forward(((checksums_ht.values)[checksums_i]));
               while (i_array_in_range(((checksums_ht.values)[checksums_i]))) {
                 printf("%s\n", (i_array_get_at(paths, (i_array_get(((checksums_ht.values)[checksums_i]))))));
                 i_array_forward(((checksums_ht.values)[checksums_i]));

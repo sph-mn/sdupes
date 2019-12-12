@@ -1,16 +1,30 @@
-(pre-define
-  _POSIX_C_SOURCE 201000
-  input-path-count-min 1024
-  input-path-count-max 0
-  part-checksum-page-count 2)
+(sc-comment
+  "error handling: message lines on standard error, ignore if possible, exit on memory error.
+  ids are indexes in the paths array")
+
+(pre-define _POSIX_C_SOURCE 201000)
 
 (pre-include "inttypes.h" "stdio.h"
   "string.h" "errno.h" "sys/stat.h"
   "sys/mman.h" "fcntl.h" "unistd.h"
   "./foreign/murmur3.c" "./foreign/sph/status.c" "./foreign/sph/hashtable.c"
-  "./foreign/sph/i-array.c" "./foreign/sph/helper.c")
+  "./foreign/sph/i-array.c" "./foreign/sph/helper.c" "./foreign/sph/quicksort.c")
 
-(declare checksum-t (type (struct (a uint64-t) (b uint64-t))) id-t (type uint64-t))
+(pre-define
+  input-path-count-min 1024
+  input-path-count-max 0
+  part-checksum-page-count 1
+  flag-display-clusters 1
+  flag-null-delimiter 2
+  (error format ...)
+  (fprintf stderr (pre-string-concat "error: %s:%d " format "\n") __func__ __LINE__ __VA-ARGS__)
+  memory-error (begin (error "%s" "memory allocation failed") (exit 1)))
+
+(declare
+  checksum-t (type (struct (a uint64-t) (b uint64-t)))
+  id-t (type uint64-t)
+  id-mtime-t (type (struct (id id-t) (mtime uint64-t))))
+
 (i-array-declare-type ids id-t)
 (i-array-declare-type paths uint8-t*)
 (hashtable-declare-type hashtable-64-id uint64-t id-t)
@@ -46,11 +60,6 @@
     (set char-count (getline &line &line-size stdin)))
   (set *output result)
   (return 0))
-
-(pre-define
-  (error format ...)
-  (fprintf stderr (pre-string-concat "error: %s:%d " format "\n") __func__ __LINE__ __VA-ARGS__)
-  memory-error (begin (error "%s" "memory allocation failed") (exit 1)))
 
 (define (get-sizes paths) (hashtable-64-ids-t paths-t)
   "the result will only contain ids of regular files (no directories, symlinks or similar)"
@@ -91,6 +100,37 @@
   (hashtable-64-id-destroy first-ht)
   (return second-ht))
 
+(define (id-mtime-less? a b c) (uint8-t void* ssize-t ssize-t)
+  stat-info
+  (struct stat)
+  (return
+    (< (struct-get (array-get (convert-type a id-mtime-t*) b) mtime)
+      (struct-get (array-get (convert-type a id-mtime-t*) c) mtime))))
+
+(define (id-mtime-swapper a b c) (void void* ssize-t ssize-t)
+  (declare d uint32-t)
+  (set
+    d (array-get (convert-type a id-mtime-t*) b)
+    (array-get (convert-type a id-mtime-t*) b) (array-get (convert-type a id-mtime-t*) c)
+    (array-get (convert-type a id-mtime-t*) c) d))
+
+(define (sort-ids-by-mtime ids) (void ids-t)
+  (declare stat-info (struct stat))
+  (set id-count (i-array-length ids) ids-mtime (malloc (* id-count (sizeof id-t))))
+  (if (not ids-mtime) memory-error)
+  (sc-comment "get mtime for all ids and sort pairs of id and mtime")
+  (for ((set i 0) (<i id-count) (set+ i 1))
+    (set file (open path O-RDONLY))
+    (if (< file 0) (begin (error "couldnt open %s %s" (strerror errno) path) (return 1)))
+    (if (< (fstat file &stat-info) 0)
+      (begin (error "couldnt stat %s %s" (strerror errno) path) (close file) (return 1)))
+    (close file)
+    (struct-set (array-get ids-mtime i) id (ids-get-at ids i) mtime stat-info.st-mtime))
+  (quicksort id-mtime-less? id-mtime-swapper ids.start 0 (- ids.unused 1))
+  (for ((set i 0) (<i id-count) (set+ i 1))
+    (set (array-get ids.start i) (struct-get (array-get ids-mtime i) id)))
+  (free ids-mtime))
+
 (define (get-checksum path center-page-count page-size result)
   (uint8-t uint8-t* size-t size-t checksum-t*)
   "center-page-count and page-size are optional and can be zero.
@@ -104,8 +144,9 @@
     part-start size-t
     part-length size-t)
   (set file (open path O-RDONLY))
-  (if (< file 0) (begin (error "%s %s" "couldnt open file at " path) (return 1)))
-  (if (< (fstat file &stat-info) 0) (begin (error "%s %s" "couldnt stat file at " path) (return 1)))
+  (if (< file 0) (begin (error "couldnt open %s %s" (strerror errno) path) (return 1)))
+  (if (< (fstat file &stat-info) 0)
+    (begin (error "couldnt stat %s %s" (strerror errno) path) (goto error)))
   (if stat-info.st-size
     (if center-page-count
       (if (> stat-info.st-size (* 2 page-size part-checksum-page-count))
@@ -115,15 +156,16 @@
             part-start (if* (> 3 part-start) page-size (* page-size (/ part-start 2)))
             part-length (* page-size part-checksum-page-count))
           (if (> part-length stat-info.st-size) (set part-length (- stat-info.st-size part-start))))
-        (begin (set result:a 0 result:b 0) (return 0)))
+        (begin (set result:a 0 result:b 0) (goto exit)))
       (set part-start 0 part-length stat-info.st-size))
-    (begin (set result:a 0 result:b 0) (return 0)))
+    (begin (set result:a 0 result:b 0) (goto exit)))
   (set file-buffer (mmap 0 part-length PROT-READ MAP-SHARED file part-start))
+  (if (> 0 file-buffer) (begin (error "%s %s\n" (strerror errno) path) (goto error)))
   (MurmurHash3_x64_128 file-buffer part-length 0 temp)
   (set result:a (array-get temp 0) result:b (array-get temp 1))
   (munmap file-buffer part-length)
-  (close file)
-  (return 0))
+  (label exit (close file) (return 0))
+  (label error (close file) (return 1)))
 
 (define (get-checksums paths ids center-page-count page-size)
   (hashtable-checksum-ids-t paths-t ids-t size-t size-t)
@@ -161,47 +203,64 @@
             (hashtable-checksum-ids-set second-ht checksum value-ids))))
       (hashtable-checksum-id-set first-ht checksum (i-array-get ids)))
     (i-array-forward ids))
+  (hashtable-checksum-id-destroy first-ht)
   (return second-ht))
 
-(define (main) int
+(define (display-result paths ht cluster null) (void paths-t hashtable-checksum-ids-t)
+  "also frees hashtable values"
+  (declare i size-t ids ids-t)
+  (for ((set i 0) (< i ht.size) (set+ i 1))
+    (if (not (array-get ht.flags i)) continue)
+    (set ids (array-get ht.values i))
+    (if cluster (printf "\n") (i-array-forward ids))
+    (while (i-array-in-range ids)
+      (printf "%s\n" (i-array-get-at paths (i-array-get ids)))
+      (i-array-forward ids))
+    (i-array-free ids)))
+
+(define (display-help) void
+  (printf "usage: sdupes\n")
+  (printf "  --help, -h  display this help text\n")
+  (printf "  --cluster, -c  display all duplicate paths, two newlines between each set\n")
+  (printf "  --null, -c  use the null byte as path delimiter, two null bytes between each set\n"))
+
+(define (cli argc argv) (uint8-t int char**)
+  (declare opt int)
+  (define options uint8-t 0)
+  (define longopts
+    (array (struct option) 3
+      (struct-literal "help" no-argument 0 #\h) (struct-literal "cluster" no-argument 0 #\c)
+      (struct-literal "null" no-argument 0 #\c) (struct-literal 0 0 0 0)))
+  (while (not (= -1 (set opt (getopt-long argc argv "chn" longopts 0))))
+    (case = opt
+      (#\h (display-help) (set options (bit-or flag-exit options)) break)
+      (#\c (set options (bit-or flag-display-clusters options)))
+      (#\n (set options (bit-or flag-null-delimiter options)))))
+  (label exit (return options)))
+
+(define (main argc argv) (int int char**)
   (declare
     sizes-ht hashtable-64-ids-t
-    checksums-ht hashtable-checksum-ids-t
     part-checksums-ht hashtable-checksum-ids-t
-    sizes-i size-t
-    part-checksums-i size-t
-    checksums-i size-t
+    i size-t
+    j size-t
+    options uint8-t
     page-size size-t)
-  (set page-size (sysconf _SC-PAGE-SIZE))
   (i-array-declare paths paths-t)
+  (set options (cli argc argv) page-size (sysconf _SC-PAGE-SIZE))
   (if (get-input-paths &paths) memory-error)
-  (sc-comment "cluster by size")
   (set sizes-ht (get-sizes paths))
-  (for ((set sizes-i 0) (< sizes-i sizes-ht.size) (set+ sizes-i 1))
-    (if (array-get sizes-ht.flags sizes-i)
-      (begin
-        (sc-comment "cluster by center portion checksum")
-        (set part-checksums-ht
-          (get-checksums paths (array-get sizes-ht.values sizes-i)
-            part-checksum-page-count page-size))
-        (for
-          ( (set part-checksums-i 0) (< part-checksums-i part-checksums-ht.size)
-            (set+ part-checksums-i 1))
-          (if (array-get part-checksums-ht.flags part-checksums-i)
-            (begin
-              (sc-comment "cluster by complete file checksum")
-              (set checksums-ht
-                (get-checksums paths (array-get part-checksums-ht.values part-checksums-i) 0 0))
-              (sc-comment "display found duplicates")
-              (for ((set checksums-i 0) (< checksums-i checksums-ht.size) (set+ checksums-i 1))
-                (if (array-get checksums-ht.flags checksums-i)
-                  (begin
-                    (printf "\n")
-                    (while (i-array-in-range (array-get checksums-ht.values checksums-i))
-                      (printf "%s\n"
-                        (i-array-get-at paths
-                          (i-array-get (array-get checksums-ht.values checksums-i))))
-                      (i-array-forward (array-get checksums-ht.values checksums-i))))))
-              (hashtable-checksum-ids-destroy checksums-ht))))
-        (hashtable-checksum-ids-destroy part-checksums-ht))))
+  (for ((set i 0) (< i sizes-ht.size) (set+ i 1))
+    (if (not (array-get sizes-ht.flags i)) continue)
+    (set part-checksums-ht
+      (get-checksums paths (array-get sizes-ht.values i) part-checksum-page-count page-size))
+    (i-array-free (array-get sizes-ht.values i))
+    (for ((set j 0) (< j part-checksums-ht.size) (set+ j 1))
+      (if (not (array-get part-checksums-ht.flags j)) continue)
+      (set checksums-ht (get-checksums paths (array-get part-checksums-ht.values j) 0 0))
+      (i-array-free (array-get part-checksums-ht.values j))
+      (display-result paths checksums-ht
+        (bit-and options flag-display-clusters) (bit-and options flag-null-delimiter))
+      (hashtable-checksum-ids-free checksums-ht))
+    (hashtable-checksum-ids-free part-checksums-ht))
   (return 0))
