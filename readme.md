@@ -6,7 +6,7 @@ at this point in time, many existing file duplication detectors are slow or over
 usage: sdupes
 description
   read file paths from standard input and display excess duplicate files, each set sorted by creation time ascending.
-  considers only regular files. files are considered duplicate if they have the same size and murmur3 hash
+  considers only regular files. files are duplicate if they have the same size, center portion and murmur3 hash
 options
   --help, -h  display this help text
   --cluster, -c  display all duplicate paths, two newlines between each set

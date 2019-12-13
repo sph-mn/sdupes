@@ -87,7 +87,7 @@
   (printf
     "  read file paths from standard input and display excess duplicate files, each set sorted by creation time ascending.\n")
   (printf
-    "  considers only regular files. files are considered duplicate if they have the same size and murmur3 hash\n")
+    "  considers only regular files. files are duplicate if they have the same size, center portion and murmur3 hash\n")
   (printf "options\n")
   (printf "  --help, -h  display this help text\n")
   (printf "  --cluster, -c  display all duplicate paths, two newlines between each set\n")
@@ -140,8 +140,9 @@
   #;(printf "start: %lu, end: %lu, size: %lu, path: %s\n" part-start
     (+ part-start part-length) stat-info.st-size path)
   (set file-buffer (mmap 0 part-length PROT-READ MAP-SHARED file part-start))
-  (if (= (convert-type -1 void*) file-buffer) (begin (error "%s %s" (strerror errno) path) (close file) (return 1)))
-  (MurmurHash3_x64_128 file-buffer 1 0 temp)
+  (if (= (convert-type -1 void*) file-buffer)
+    (begin (error "%s %s" (strerror errno) path) (close file) (return 1)))
+  (MurmurHash3_x64_128 file-buffer part-length 0 temp)
   (munmap file-buffer part-length)
   (close file)
   (set result:a (array-get temp 0) result:b (array-get temp 1))
