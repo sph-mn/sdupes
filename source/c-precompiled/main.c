@@ -163,16 +163,16 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
     return (0);
   };
   file_buffer = mmap(0, part_length, PROT_READ, MAP_SHARED, file, part_start);
-  if (0 > file_buffer) {
+  if (((void*)(-1)) == file_buffer) {
     error("%s %s", (strerror(errno)), path);
     close(file);
     return (1);
   };
-  MurmurHash3_x64_128(file_buffer, part_length, 0, temp);
-  result->a = temp[0];
-  result->b = temp[1];
+  MurmurHash3_x64_128(file_buffer, 1, 0, temp);
   munmap(file_buffer, part_length);
   close(file);
+  result->a = temp[0];
+  result->b = temp[1];
   return (0);
 }
 paths_t get_input_paths() {

@@ -137,12 +137,14 @@
         (begin (set result:a 0 result:b 0) (close file) (return 0)))
       (set part-start 0 part-length stat-info.st-size))
     (begin (set result:a 0 result:b 0) (close file) (return 0)))
+  #;(printf "start: %lu, end: %lu, size: %lu, path: %s\n" part-start
+    (+ part-start part-length) stat-info.st-size path)
   (set file-buffer (mmap 0 part-length PROT-READ MAP-SHARED file part-start))
-  (if (> 0 file-buffer) (begin (error "%s %s" (strerror errno) path) (close file) (return 1)))
-  (MurmurHash3_x64_128 file-buffer part-length 0 temp)
-  (set result:a (array-get temp 0) result:b (array-get temp 1))
+  (if (= (convert-type -1 void*) file-buffer) (begin (error "%s %s" (strerror errno) path) (close file) (return 1)))
+  (MurmurHash3_x64_128 file-buffer 1 0 temp)
   (munmap file-buffer part-length)
   (close file)
+  (set result:a (array-get temp 0) result:b (array-get temp 1))
   (return 0))
 
 (define (get-input-paths) paths-t
