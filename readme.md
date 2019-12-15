@@ -13,6 +13,8 @@ options
   --null, -n  for results: use the null byte as path delimiter, two null bytes between each set
 ~~~
 
+note that given the requirements size/center-portion/hash there is a very high probability that files are duplicate, but not 100% certainty. it is unlikely that two files are found as duplicates that are not duplicates. only a costly byte-by-byte comparison can give maximum confidence
+
 # dependencies
 * c 2011 standard library (for example glibc)
 * posix 2008 features (linux, freebsd)
@@ -28,7 +30,7 @@ this should build the file `temp/sdupes`, which is the final executable and can 
 
 # usage
 ~~~
-find /home/myuser/directory-with-1000s-of-huge-files | sdupes
+find /home/myuser/directory-with-10000s-of-huge-files | sdupes
 ~~~
 
 lists excess duplicate files. one file is always left out of each set except when --cluster is used.
@@ -45,7 +47,8 @@ find | sdupes | xargs -n 1 -d \\n rm
 * currently written in c via sc, which just maps scheme-like expressions to c
 
 # possible enhancements
-* byte-by-byte comparison - if needed. but it is resource intensive
+* optionally compare the md5 sum for extra confidence. a nice md5 implementation can be found [here](https://www.nayuki.io/page/fast-md5-hash-implementation-in-x86-assembly)
+* optional byte-by-byte comparison. but it is resource intensive, because large files cant be kept in memory, so that for each comparison, each two relevant files have to be fully read again and again
 
 # license
-gpl3+
+[gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
