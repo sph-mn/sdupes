@@ -13,7 +13,7 @@ options
   --null, -n  for results: use the null byte as path delimiter, two null bytes between each set
 ~~~
 
-note that given the requirements size/center-portion/hash there is a very high probability that files are duplicate, but not 100% certainty. it is unlikely that two files are found as duplicates that are not duplicates. only a costly byte-by-byte comparison can give maximum confidence
+note that given the requirements size/center-portion/hash there is a very high probability that matching files are duplicate, but not absolute certainty. it is unlikely that files are found that are not duplicates but only a costly byte-by-byte comparison could give maximum confidence
 
 # dependencies
 * c 2011 standard library (for example glibc)
