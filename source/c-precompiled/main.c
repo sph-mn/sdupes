@@ -162,15 +162,17 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
     close(file);
     return (0);
   };
+  if (!page_size) {
+    part_length = stat_info.st_size;
+  };
   file_buffer = mmap(0, part_length, PROT_READ, MAP_SHARED, file, part_start);
-  if (((void*)(-1)) == file_buffer) {
-    error("%s %s", (strerror(errno)), path);
-    close(file);
+  close(file);
+  if (MAP_FAILED == file_buffer) {
+    error("%s", (strerror(errno)));
     return (1);
   };
   MurmurHash3_x64_128(file_buffer, part_length, 0, temp);
   munmap(file_buffer, part_length);
-  close(file);
   result->a = temp[0];
   result->b = temp[1];
   return (0);
@@ -271,7 +273,7 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_p
   };
   while (i_array_in_range(ids)) {
     if (get_checksum((i_array_get_at(paths, (i_array_get(ids)))), center_page_count, page_size, (&checksum))) {
-      error("%s", "couldnt calculate checksum for ", (i_array_get_at(paths, (i_array_get(ids)))));
+      error("couldnt calculate checksum for %s", (i_array_get_at(paths, (i_array_get(ids)))));
     };
     existing1 = hashtable_checksum_id_get(ht1, checksum);
     if (existing1) {
@@ -319,8 +321,7 @@ void display_result(paths_t paths, hashtable_checksum_ids_t ht, uint8_t cluster,
       i_array_forward(ids);
     };
     while (i_array_in_range(ids)) {
-      printf((i_array_get_at(paths, (i_array_get(ids)))));
-      printf("%c", delimiter);
+      printf("%s%c", (i_array_get_at(paths, (i_array_get(ids)))), delimiter);
       i_array_forward(ids);
     };
     i_array_free(ids);

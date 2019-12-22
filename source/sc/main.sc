@@ -137,14 +137,14 @@
         (begin (set result:a 0 result:b 0) (close file) (return 0)))
       (set part-start 0 part-length stat-info.st-size))
     (begin (set result:a 0 result:b 0) (close file) (return 0)))
-  #;(printf "start: %lu, end: %lu, size: %lu, path: %s\n" part-start
-    (+ part-start part-length) stat-info.st-size path)
+  (if (not page-size) (set part-length stat-info.st-size))
+  ;(printf "start: %lu, end: %lu, size: %lu, path: %s\n" part-start
+  ;  (+ part-start part-length) stat-info.st-size path)
   (set file-buffer (mmap 0 part-length PROT-READ MAP-SHARED file part-start))
-  (if (= (convert-type -1 void*) file-buffer)
-    (begin (error "%s %s" (strerror errno) path) (close file) (return 1)))
+  (close file)
+  (if (= MAP-FAILED file-buffer) (begin (error "%s" (strerror errno)) (return 1)))
   (MurmurHash3_x64_128 file-buffer part-length 0 temp)
   (munmap file-buffer part-length)
-  (close file)
   (set result:a (array-get temp 0) result:b (array-get temp 1))
   (return 0))
 
@@ -225,7 +225,7 @@
   (while (i-array-in-range ids)
     (if
       (get-checksum (i-array-get-at paths (i-array-get ids)) center-page-count page-size &checksum)
-      (error "%s" "couldnt calculate checksum for " (i-array-get-at paths (i-array-get ids))))
+      (error "couldnt calculate checksum for %s" (i-array-get-at paths (i-array-get ids))))
     (set existing1 (hashtable-checksum-id-get ht1 checksum))
     (if existing1
       (begin
@@ -256,8 +256,7 @@
     (if (sort-ids-by-ctime ids paths) continue)
     (if cluster (printf "%c" delimiter) (i-array-forward ids))
     (while (i-array-in-range ids)
-      (printf (i-array-get-at paths (i-array-get ids)))
-      (printf "%c" delimiter)
+      (printf "%s%c" (i-array-get-at paths (i-array-get ids)) delimiter)
       (i-array-forward ids))
     (i-array-free ids))
   (hashtable-checksum-ids-free ht))
