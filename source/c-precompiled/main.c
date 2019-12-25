@@ -22,6 +22,7 @@
 #define flag_display_clusters 1
 #define flag_null_delimiter 2
 #define flag_exit 4
+#define flag_sort_reverse 8
 #define error(format, ...) fprintf(stderr, "error: %s:%d " format "\n", __func__, __LINE__, __VA_ARGS__)
 #define memory_error \
   error("%s", "memory allocation failed"); \
@@ -46,6 +47,7 @@ hashtable_declare_type(hashtable_64_ids, uint64_t, ids_t);
 hashtable_declare_type(hashtable_checksum_id, checksum_t, id_t);
 hashtable_declare_type(hashtable_checksum_ids, checksum_t, ids_t);
 uint8_t id_ctime_less_p(void* a, ssize_t b, ssize_t c) { return (((((id_ctime_t*)(a))[b]).ctime < (((id_ctime_t*)(a))[c]).ctime)); }
+uint8_t id_ctime_greater_p(void* a, ssize_t b, ssize_t c) { return (((((id_ctime_t*)(a))[b]).ctime > (((id_ctime_t*)(a))[c]).ctime)); }
 void id_ctime_swapper(void* a, ssize_t b, ssize_t c) {
   id_ctime_t d;
   d = ((id_ctime_t*)(a))[b];
@@ -53,7 +55,7 @@ void id_ctime_swapper(void* a, ssize_t b, ssize_t c) {
   ((id_ctime_t*)(a))[c] = d;
 }
 /** sort ids in-place via temporary array of pairs of id and ctime */
-uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths) {
+uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths, uint8_t sort_descending) {
   int file;
   size_t i;
   size_t id_count;
@@ -83,7 +85,7 @@ uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths) {
     (ids_ctime[i]).id = i_array_get_at(ids, i);
     (ids_ctime[i]).ctime = stat_info.st_ctime;
   };
-  quicksort(id_ctime_less_p, id_ctime_swapper, ids_ctime, 0, (id_count - 1));
+  quicksort((sort_descending ? id_ctime_greater_p : id_ctime_less_p), id_ctime_swapper, ids_ctime, 0, (id_count - 1));
   for (i = 0; (i < id_count); i += 1) {
     (ids.start)[i] = (ids_ctime[i]).id;
   };
@@ -98,13 +100,14 @@ void display_help() {
   printf("options\n");
   printf("  --help, -h  display this help text\n");
   printf("  --cluster, -c  display all duplicate paths, two newlines between each set\n");
-  printf("  --null, -n  for results: use the null byte as path delimiter, two null bytes between each set\n");
+  printf("  --null, -n for results: use the null byte as path delimiter, two null bytes between each set\n");
+  printf("  --sort-reverse, -s  sort clusters by creation time descending\n");
 }
 uint8_t cli(int argc, char** argv) {
   int opt;
-  struct option longopts[4] = { { "help", no_argument, 0, 'h' }, { "cluster", no_argument, 0, 'c' }, { "null", no_argument, 0, 'c' }, { 0, 0, 0, 0 } };
+  struct option longopts[5] = { { "help", no_argument, 0, 'h' }, { "cluster", no_argument, 0, 'c' }, { "null", no_argument, 0, 'n' }, { "sort-reverse", no_argument, 0, 's' }, { 0, 0, 0, 0 } };
   uint8_t options = 0;
-  while (!(-1 == (opt = getopt_long(argc, argv, "chn", longopts, 0)))) {
+  while (!(-1 == (opt = getopt_long(argc, argv, "chns", longopts, 0)))) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
@@ -113,6 +116,8 @@ uint8_t cli(int argc, char** argv) {
       options = (flag_display_clusters | options);
     } else if ('n' == opt) {
       options = (flag_null_delimiter | options);
+    } else if ('s' == opt) {
+      options = (flag_sort_reverse | options);
     };
   };
   return (options);
@@ -302,7 +307,7 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_p
   return (ht2);
 }
 /** also frees hashtable and its values */
-void display_result(paths_t paths, hashtable_checksum_ids_t ht, uint8_t cluster, uint8_t null) {
+void display_result(paths_t paths, hashtable_checksum_ids_t ht, uint8_t cluster, uint8_t null, uint8_t sort_reverse) {
   size_t i;
   ids_t ids;
   uint8_t delimiter;
@@ -312,7 +317,7 @@ void display_result(paths_t paths, hashtable_checksum_ids_t ht, uint8_t cluster,
       continue;
     };
     ids = (ht.values)[i];
-    if (sort_ids_by_ctime(ids, paths)) {
+    if (sort_ids_by_ctime(ids, paths, sort_reverse)) {
       continue;
     };
     if (cluster) {
@@ -353,7 +358,7 @@ int main(int argc, char** argv) {
       if (!(part_checksums_ht.flags)[j]) {
         continue;
       };
-      display_result(paths, (get_checksums(paths, ((part_checksums_ht.values)[j]), 0, 0)), (options & flag_display_clusters), (options & flag_null_delimiter));
+      display_result(paths, (get_checksums(paths, ((part_checksums_ht.values)[j]), 0, 0)), (options & flag_display_clusters), (options & flag_null_delimiter), (options & flag_sort_reverse));
       i_array_free(((part_checksums_ht.values)[j]));
     };
     hashtable_checksum_ids_free(part_checksums_ht);

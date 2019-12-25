@@ -18,6 +18,7 @@
   flag-display-clusters 1
   flag-null-delimiter 2
   flag-exit 4
+  flag-sort-reverse 8
   (error format ...)
   (fprintf stderr (pre-string-concat "error: %s:%d " format "\n") __func__ __LINE__ __VA-ARGS__)
   memory-error (begin (error "%s" "memory allocation failed") (exit 1)))
@@ -45,6 +46,11 @@
     (< (struct-get (array-get (convert-type a id-ctime-t*) b) ctime)
       (struct-get (array-get (convert-type a id-ctime-t*) c) ctime))))
 
+(define (id-ctime-greater? a b c) (uint8-t void* ssize-t ssize-t)
+  (return
+    (> (struct-get (array-get (convert-type a id-ctime-t*) b) ctime)
+      (struct-get (array-get (convert-type a id-ctime-t*) c) ctime))))
+
 (define (id-ctime-swapper a b c) (void void* ssize-t ssize-t)
   (declare d id-ctime-t)
   (set
@@ -52,7 +58,7 @@
     (array-get (convert-type a id-ctime-t*) b) (array-get (convert-type a id-ctime-t*) c)
     (array-get (convert-type a id-ctime-t*) c) d))
 
-(define (sort-ids-by-ctime ids paths) (uint8-t ids-t paths-t)
+(define (sort-ids-by-ctime ids paths sort-descending) (uint8-t ids-t paths-t uint8-t)
   "sort ids in-place via temporary array of pairs of id and ctime"
   (declare
     file int
@@ -75,7 +81,8 @@
         (return 1)))
     (close file)
     (struct-set (array-get ids-ctime i) id (i-array-get-at ids i) ctime stat-info.st-ctime))
-  (quicksort id-ctime-less? id-ctime-swapper ids-ctime 0 (- id-count 1))
+  (quicksort (if* sort-descending id-ctime-greater? id-ctime-less?) id-ctime-swapper
+    ids-ctime 0 (- id-count 1))
   (for ((set i 0) (< i id-count) (set+ i 1))
     (set (array-get ids.start i) (struct-get (array-get ids-ctime i) id)))
   (free ids-ctime)
@@ -92,21 +99,24 @@
   (printf "  --help, -h  display this help text\n")
   (printf "  --cluster, -c  display all duplicate paths, two newlines between each set\n")
   (printf
-    "  --null, -n  for results: use the null byte as path delimiter, two null bytes between each set\n"))
+    "  --null, -n for results: use the null byte as path delimiter, two null bytes between each set\n")
+  (printf "  --sort-reverse, -s  sort clusters by creation time descending\n"))
 
 (define (cli argc argv) (uint8-t int char**)
   (declare
     opt int
     longopts
-    (array (struct option) 4
+    (array (struct option) 5
       (struct-literal "help" no-argument 0 #\h) (struct-literal "cluster" no-argument 0 #\c)
-      (struct-literal "null" no-argument 0 #\c) (struct-literal 0 0 0 0)))
+      (struct-literal "null" no-argument 0 #\n) (struct-literal "sort-reverse" no-argument 0 #\s)
+      (struct-literal 0 0 0 0)))
   (define options uint8-t 0)
-  (while (not (= -1 (set opt (getopt-long argc argv "chn" longopts 0))))
+  (while (not (= -1 (set opt (getopt-long argc argv "chns" longopts 0))))
     (case = opt
       (#\h (display-help) (set options (bit-or flag-exit options)) break)
       (#\c (set options (bit-or flag-display-clusters options)))
-      (#\n (set options (bit-or flag-null-delimiter options)))))
+      (#\n (set options (bit-or flag-null-delimiter options)))
+      (#\s (set options (bit-or flag-sort-reverse options)))))
   (return options))
 
 (define (get-checksum path center-page-count page-size result)
@@ -245,15 +255,15 @@
   (hashtable-checksum-id-free ht1)
   (return ht2))
 
-(define (display-result paths ht cluster null)
-  (void paths-t hashtable-checksum-ids-t uint8-t uint8-t)
+(define (display-result paths ht cluster null sort-reverse)
+  (void paths-t hashtable-checksum-ids-t uint8-t uint8-t uint8-t)
   "also frees hashtable and its values"
   (declare i size-t ids ids-t delimiter uint8-t)
   (set delimiter (if* null #\0 #\newline))
   (for ((set i 0) (< i ht.size) (set+ i 1))
     (if (not (array-get ht.flags i)) continue)
     (set ids (array-get ht.values i))
-    (if (sort-ids-by-ctime ids paths) continue)
+    (if (sort-ids-by-ctime ids paths sort-reverse) continue)
     (if cluster (printf "%c" delimiter) (i-array-forward ids))
     (while (i-array-in-range ids)
       (printf "%s%c" (i-array-get-at paths (i-array-get ids)) delimiter)
@@ -281,7 +291,8 @@
     (for ((set j 0) (< j part-checksums-ht.size) (set+ j 1))
       (if (not (array-get part-checksums-ht.flags j)) continue)
       (display-result paths (get-checksums paths (array-get part-checksums-ht.values j) 0 0)
-        (bit-and options flag-display-clusters) (bit-and options flag-null-delimiter))
+        (bit-and options flag-display-clusters) (bit-and options flag-null-delimiter)
+        (bit-and options flag-sort-reverse))
       (i-array-free (array-get part-checksums-ht.values j)))
     (hashtable-checksum-ids-free part-checksums-ht))
   (return 0))
