@@ -232,7 +232,7 @@ hashtable_64_ids_t get_sizes(paths_t paths) {
     memory_error;
   };
   while (i_array_in_range(paths)) {
-    if (stat((i_array_get(paths)), (&stat_info))) {
+    if (lstat((i_array_get(paths)), (&stat_info))) {
       error("%s %s\n", (strerror(errno)), (i_array_get(paths)));
     };
     if (!S_ISREG((stat_info.st_mode))) {

@@ -196,7 +196,7 @@
       (hashtable-64-ids-new (i-array-length paths) &ht2))
     memory-error)
   (while (i-array-in-range paths)
-    (if (stat (i-array-get paths) &stat-info)
+    (if (lstat (i-array-get paths) &stat-info)
       (error "%s %s\n" (strerror errno) (i-array-get paths)))
     (if (not (S-ISREG stat-info.st_mode)) (begin (i-array-forward paths) continue))
     (set existing1 (hashtable-64-id-get ht1 stat-info.st-size))
