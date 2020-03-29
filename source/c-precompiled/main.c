@@ -96,7 +96,7 @@ void display_help() {
   printf("usage: sdupes\n");
   printf("description\n");
   printf(("  read file paths from standard input and display excess duplicate files, each set sorted by creation time ascending.\n"));
-  printf(("  considers only regular files. files are duplicate if they have the same size, center portion and murmur3 hash\n"));
+  printf(("  considers only regular files. files are duplicate if they have identical size, center portion and murmur3 hash\n"));
   printf("options\n");
   printf("  --help, -h  display this help text\n");
   printf("  --cluster, -c  display all duplicate paths, two newlines between each set\n");

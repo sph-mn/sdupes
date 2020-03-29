@@ -6,14 +6,14 @@ at this point in time, many existing file duplication detectors are slow or over
 usage: sdupes
 description
   read file paths from standard input and display excess duplicate files, each set sorted by creation time ascending.
-  considers only regular files. files are duplicate if they have the same size, center portion and murmur3 hash
+  considers only regular files. files are duplicate if they have identical size, center portion and murmur3 hash
 options
   --help, -h  display this help text
   --cluster, -c  display all duplicate paths, two newlines between each set
   --null, -n  for results: use the null byte as path delimiter, two null bytes between each set
 ~~~
 
-note that given the requirements size/center-portion/hash there is a high probability that matching files are duplicate, but not absolute certainty. it is unlikely that files are found that are not duplicates but only a costly byte-by-byte comparison could give maximum confidence
+note that given the requirements size/center-portion/hash there is no absolute certainty that files are duplicate, only a high probability that is suitable for many practical use cases. only a costly byte-by-byte comparison can give maximum confidence
 
 # dependencies
 * c 2011 standard library (for example glibc)
