@@ -92,7 +92,7 @@
   (printf "usage: sdupes\n")
   (printf "description\n")
   (printf
-    "  read file paths from standard input and display excess duplicate files, each set sorted by creation time ascending.\n")
+    "  read file paths from standard input and display paths of excess duplicate files, each set sorted by creation time ascending.\n")
   (printf
     "  considers only regular files. files are duplicate if they have identical size, center portion and murmur3 hash\n")
   (printf "options\n")
