@@ -1,6 +1,7 @@
+(sc-comment "depends on sys/types.h for ssize_t")
+
 (define (quicksort less? swap array left right)
-  (void (function-pointer uint8-t void* ssize-t ssize-t)
-    (function-pointer void void* ssize-t ssize-t) void* ssize-t ssize-t)
+  (void (function-pointer uint8-t void* ssize-t ssize-t) (function-pointer void void* ssize-t ssize-t) void* ssize-t ssize-t)
   "a generic quicksort implementation that works with any array type.
    less should return true if the first argument is < than the second.
    swap should exchange the values of the two arguments it receives.

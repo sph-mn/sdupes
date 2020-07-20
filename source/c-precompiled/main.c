@@ -1,5 +1,5 @@
 /* error handling: message lines on standard error, ignore if possible, exit on memory error.
-  ids are indexes in the paths array */
+   ids are indexes in the paths array */
 #define _POSIX_C_SOURCE 201000
 #include <inttypes.h>
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #include "./foreign/murmur3.c"
 #include "./foreign/sph/status.c"
 #include "./foreign/sph/hashtable.c"
-#include "./foreign/sph/i-array.c"
+#include "./foreign/sph/array4.c"
 #include "./foreign/sph/helper.c"
 #include "./foreign/sph/quicksort.c"
 #define input_path_count_min 1024
@@ -27,6 +27,8 @@
 #define memory_error \
   error("%s", "memory allocation failed"); \
   exit(1);
+#define hashtable_hash_checksum(key, size) (key.a % size)
+#define hashtable_equal_checksum(key_a, key_b) ((key_a.a == key_b.a) && (key_a.b == key_b.b))
 typedef struct {
   uint64_t a;
   uint64_t b;
@@ -36,16 +38,12 @@ typedef struct {
   id_t id;
   uint64_t ctime;
 } id_ctime_t;
-i_array_declare_type(ids, id_t);
-i_array_declare_type(paths, uint8_t*);
-hashtable_declare_type(hashtable_64_id, uint64_t, id_t);
-hashtable_declare_type(hashtable_64_ids, uint64_t, ids_t);
-#undef hashtable_hash
-#undef hashtable_equal
-#define hashtable_hash(key, hashtable) (key.a % hashtable.size)
-#define hashtable_equal(key_a, key_b) ((key_a.a == key_b.a) && (key_a.b == key_b.b))
-hashtable_declare_type(hashtable_checksum_id, checksum_t, id_t);
-hashtable_declare_type(hashtable_checksum_ids, checksum_t, ids_t);
+array4_declare_type(ids, id_t);
+array4_declare_type(paths, uint8_t*);
+hashtable_declare_type(hashtable_64_id, uint64_t, id_t, hashtable_hash_integer, hashtable_equal_integer, 2);
+hashtable_declare_type(hashtable_64_ids, uint64_t, ids_t, hashtable_hash_integer, hashtable_equal_integer, 2);
+hashtable_declare_type(hashtable_checksum_id, checksum_t, id_t, hashtable_hash_checksum, hashtable_equal_checksum, 2);
+hashtable_declare_type(hashtable_checksum_ids, checksum_t, ids_t, hashtable_hash_checksum, hashtable_equal_checksum, 2);
 uint8_t id_ctime_less_p(void* a, ssize_t b, ssize_t c) { return (((((id_ctime_t*)(a))[b]).ctime < (((id_ctime_t*)(a))[c]).ctime)); }
 uint8_t id_ctime_greater_p(void* a, ssize_t b, ssize_t c) { return (((((id_ctime_t*)(a))[b]).ctime > (((id_ctime_t*)(a))[c]).ctime)); }
 void id_ctime_swapper(void* a, ssize_t b, ssize_t c) {
@@ -62,13 +60,13 @@ uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths, uint8_t sort_descending) {
   struct stat stat_info;
   uint8_t* path;
   id_ctime_t* ids_ctime;
-  id_count = i_array_length(ids);
+  id_count = array4_size(ids);
   ids_ctime = malloc((id_count * sizeof(id_ctime_t)));
   if (!ids_ctime) {
     memory_error;
   };
   for (i = 0; (i < id_count); i += 1) {
-    path = i_array_get_at(paths, (i_array_get_at(ids, i)));
+    path = array4_get_at(paths, (array4_get_at(ids, i)));
     file = open(path, O_RDONLY);
     if (file < 0) {
       error("couldnt open %s %s", (strerror(errno)), path);
@@ -82,12 +80,12 @@ uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths, uint8_t sort_descending) {
       return (1);
     };
     close(file);
-    (ids_ctime[i]).id = i_array_get_at(ids, i);
+    (ids_ctime[i]).id = array4_get_at(ids, i);
     (ids_ctime[i]).ctime = stat_info.st_ctime;
   };
   quicksort((sort_descending ? id_ctime_greater_p : id_ctime_less_p), id_ctime_swapper, ids_ctime, 0, (id_count - 1));
   for (i = 0; (i < id_count); i += 1) {
-    (ids.start)[i] = (ids_ctime[i]).id;
+    array4_get_at(ids, i) = (ids_ctime[i]).id;
   };
   free(ids_ctime);
   return (0);
@@ -96,7 +94,10 @@ void display_help() {
   printf("usage: sdupes\n");
   printf("description\n");
   printf(("  read file paths from standard input and display paths of excess duplicate files, each set sorted by creation time ascending.\n"));
-  printf(("  considers only regular files. files are duplicate if they have identical size, center portion and murmur3 hash\n"));
+  printf(("  considers only regular files. files are duplicate if all of the following properties are identical:\n"));
+  printf("  * file size\n");
+  printf("  * murmur3 hash of a center portion of size page size\n");
+  printf("  * murmur3 hash of the whole file\n");
   printf("options\n");
   printf("  --help, -h  display this help text\n");
   printf("  --cluster, -c  display all duplicate paths, two newlines between each set\n");
@@ -183,7 +184,7 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
   return (0);
 }
 paths_t get_input_paths() {
-  i_array_declare(result, paths_t);
+  array4_declare(result, paths_t);
   char* line;
   char* line_copy;
   size_t line_size;
@@ -198,7 +199,7 @@ paths_t get_input_paths() {
     if (!line_size) {
       continue;
     };
-    if ((i_array_length(result) > i_array_max_length(result)) && paths_resize((&result), (2 * i_array_max_length(result)))) {
+    if ((array4_size(result) > array4_max_size(result)) && paths_resize((&result), (2 * array4_max_size(result)))) {
       memory_error;
     };
     /* getline always returns the delimiter if not end of input */
@@ -211,7 +212,7 @@ paths_t get_input_paths() {
       memory_error;
     };
     memcpy(line_copy, line, line_size);
-    i_array_add(result, line_copy);
+    array4_add(result, line_copy);
     char_count = getline((&line), (&line_size), stdin);
   };
   if (ENOMEM == errno) {
@@ -227,40 +228,40 @@ hashtable_64_ids_t get_sizes(paths_t paths) {
   hashtable_64_id_t ht1;
   hashtable_64_ids_t ht2;
   struct stat stat_info;
-  i_array_declare(ids, ids_t);
-  if (hashtable_64_id_new((i_array_length(paths)), (&ht1)) || hashtable_64_ids_new((i_array_length(paths)), (&ht2))) {
+  array4_declare(ids, ids_t);
+  if (hashtable_64_id_new((array4_size(paths)), (&ht1)) || hashtable_64_ids_new((array4_size(paths)), (&ht2))) {
     memory_error;
   };
-  while (i_array_in_range(paths)) {
-    if (lstat((i_array_get(paths)), (&stat_info))) {
-      error("%s %s\n", (strerror(errno)), (i_array_get(paths)));
+  while (array4_in_range(paths)) {
+    if (lstat((array4_get(paths)), (&stat_info))) {
+      error("%s %s\n", (strerror(errno)), (array4_get(paths)));
     };
     if (!S_ISREG((stat_info.st_mode))) {
-      i_array_forward(paths);
+      array4_forward(paths);
       continue;
     };
     existing1 = hashtable_64_id_get(ht1, (stat_info.st_size));
     if (existing1) {
       existing2 = hashtable_64_ids_get(ht2, (stat_info.st_size));
       if (existing2) {
-        if (i_array_length((*existing2)) == i_array_max_length((*existing2))) {
-          if (ids_resize(existing2, (2 * i_array_max_length((*existing2))))) {
+        if (array4_size((*existing2)) == array4_max_size((*existing2))) {
+          if (ids_resize(existing2, (2 * array4_max_size((*existing2))))) {
             memory_error;
           };
         };
-        i_array_add((*existing2), (i_array_get_index(paths)));
+        array4_add((*existing2), (paths.current));
       } else {
         if (ids_new(2, (&ids))) {
           memory_error;
         };
-        i_array_add(ids, (*existing1));
-        i_array_add(ids, (i_array_get_index(paths)));
+        array4_add(ids, (*existing1));
+        array4_add(ids, (paths.current));
         hashtable_64_ids_set(ht2, (stat_info.st_size), ids);
       };
     } else {
-      hashtable_64_id_set(ht1, (stat_info.st_size), (i_array_get_index(paths)));
+      hashtable_64_id_set(ht1, (stat_info.st_size), (paths.current));
     };
-    i_array_forward(paths);
+    array4_forward(paths);
   };
   hashtable_64_id_free(ht1);
   return (ht2);
@@ -272,36 +273,36 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_p
   ids_t* existing2;
   hashtable_checksum_id_t ht1;
   hashtable_checksum_ids_t ht2;
-  i_array_declare(value_ids, ids_t);
-  if (hashtable_checksum_id_new((i_array_length(ids)), (&ht1)) || hashtable_checksum_ids_new((i_array_length(ids)), (&ht2))) {
+  array4_declare(value_ids, ids_t);
+  if (hashtable_checksum_id_new((array4_size(ids)), (&ht1)) || hashtable_checksum_ids_new((array4_size(ids)), (&ht2))) {
     memory_error;
   };
-  while (i_array_in_range(ids)) {
-    if (get_checksum((i_array_get_at(paths, (i_array_get(ids)))), center_page_count, page_size, (&checksum))) {
-      error("couldnt calculate checksum for %s", (i_array_get_at(paths, (i_array_get(ids)))));
+  while (array4_in_range(ids)) {
+    if (get_checksum((array4_get_at(paths, (array4_get(ids)))), center_page_count, page_size, (&checksum))) {
+      error("couldnt calculate checksum for %s", (array4_get_at(paths, (array4_get(ids)))));
     };
     existing1 = hashtable_checksum_id_get(ht1, checksum);
     if (existing1) {
       existing2 = hashtable_checksum_ids_get(ht2, checksum);
       if (existing2) {
-        if (i_array_length((*existing2)) == i_array_max_length((*existing2))) {
-          if (ids_resize(existing2, (2 * i_array_max_length((*existing2))))) {
+        if (array4_size((*existing2)) == array4_max_size((*existing2))) {
+          if (ids_resize(existing2, (2 * array4_max_size((*existing2))))) {
             memory_error;
           };
         };
-        i_array_add((*existing2), (i_array_get(ids)));
+        array4_add((*existing2), (array4_get(ids)));
       } else {
         if (ids_new(2, (&value_ids))) {
           memory_error;
         };
-        i_array_add(value_ids, (*existing1));
-        i_array_add(value_ids, (i_array_get(ids)));
+        array4_add(value_ids, (*existing1));
+        array4_add(value_ids, (array4_get(ids)));
         hashtable_checksum_ids_set(ht2, checksum, value_ids);
       };
     } else {
-      hashtable_checksum_id_set(ht1, checksum, (i_array_get(ids)));
+      hashtable_checksum_id_set(ht1, checksum, (array4_get(ids)));
     };
-    i_array_forward(ids);
+    array4_forward(ids);
   };
   hashtable_checksum_id_free(ht1);
   return (ht2);
@@ -323,13 +324,13 @@ void display_result(paths_t paths, hashtable_checksum_ids_t ht, uint8_t cluster,
     if (cluster) {
       printf("%c", delimiter);
     } else {
-      i_array_forward(ids);
+      array4_forward(ids);
     };
-    while (i_array_in_range(ids)) {
-      printf("%s%c", (i_array_get_at(paths, (i_array_get(ids)))), delimiter);
-      i_array_forward(ids);
+    while (array4_in_range(ids)) {
+      printf("%s%c", (array4_get_at(paths, (array4_get(ids)))), delimiter);
+      array4_forward(ids);
     };
-    i_array_free(ids);
+    array4_free(ids);
   };
   hashtable_checksum_ids_free(ht);
 }
@@ -340,7 +341,7 @@ int main(int argc, char** argv) {
   size_t j;
   uint8_t options;
   size_t page_size;
-  i_array_declare(paths, paths_t);
+  array4_declare(paths, paths_t);
   options = cli(argc, argv);
   if (flag_exit & options) {
     exit(0);
@@ -353,13 +354,13 @@ int main(int argc, char** argv) {
       continue;
     };
     part_checksums_ht = get_checksums(paths, ((sizes_ht.values)[i]), part_checksum_page_count, page_size);
-    i_array_free(((sizes_ht.values)[i]));
+    array4_free(((sizes_ht.values)[i]));
     for (j = 0; (j < part_checksums_ht.size); j += 1) {
       if (!(part_checksums_ht.flags)[j]) {
         continue;
       };
       display_result(paths, (get_checksums(paths, ((part_checksums_ht.values)[j]), 0, 0)), (options & flag_display_clusters), (options & flag_null_delimiter), (options & flag_sort_reverse));
-      i_array_free(((part_checksums_ht.values)[j]));
+      array4_free(((part_checksums_ht.values)[j]));
     };
     hashtable_checksum_ids_free(part_checksums_ht);
   };
