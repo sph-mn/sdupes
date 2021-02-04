@@ -1,3 +1,4 @@
+
 /* error handling: message lines on standard error, ignore if possible, exit on memory error.
    ids are indexes in the paths array */
 #define _POSIX_C_SOURCE 201000
@@ -16,6 +17,7 @@
 #include "./foreign/sph/array4.c"
 #include "./foreign/sph/helper.c"
 #include "./foreign/sph/quicksort.c"
+
 #define input_path_count_min 1024
 #define input_path_count_max 0
 #define part_checksum_page_count 1
@@ -52,6 +54,7 @@ void id_ctime_swapper(void* a, ssize_t b, ssize_t c) {
   ((id_ctime_t*)(a))[b] = ((id_ctime_t*)(a))[c];
   ((id_ctime_t*)(a))[c] = d;
 }
+
 /** sort ids in-place via temporary array of pairs of id and ctime */
 uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths, uint8_t sort_descending) {
   int file;
@@ -123,6 +126,7 @@ uint8_t cli(int argc, char** argv) {
   };
   return (options);
 }
+
 /** center-page-count and page-size are optional and can be zero.
    if center-page-count is not zero, only a centered part of the file is checksummed.
    in this case page-size must also be non-zero */
@@ -221,7 +225,8 @@ paths_t get_input_paths() {
   free(line);
   return (result);
 }
-/** the result will only contain ids of regular files (no directories, symlinks or similar) */
+
+/** the result will only contain ids of regular files (no directories, symlinks, etc) */
 hashtable_64_ids_t get_sizes(paths_t paths) {
   id_t* existing1;
   ids_t* existing2;
@@ -266,6 +271,7 @@ hashtable_64_ids_t get_sizes(paths_t paths) {
   hashtable_64_id_free(ht1);
   return (ht2);
 }
+
 /** assumes that all ids are for regular files */
 hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_page_count, size_t page_size) {
   checksum_t checksum;
@@ -307,6 +313,7 @@ hashtable_checksum_ids_t get_checksums(paths_t paths, ids_t ids, size_t center_p
   hashtable_checksum_id_free(ht1);
   return (ht2);
 }
+
 /** also frees hashtable and its values */
 void display_result(paths_t paths, hashtable_checksum_ids_t ht, uint8_t cluster, uint8_t null, uint8_t sort_reverse) {
   size_t i;

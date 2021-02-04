@@ -1,3 +1,4 @@
+
 /* "array4" - struct {.current, .data, .size, .used} that combines pointer, length, used length and iteration index in one object.
    this type can be used similar to linked lists.
    most bindings are generic macros that will work on any array4 type. array4-add and array4-forward go from left to right.
@@ -15,6 +16,7 @@
      }
      array4_free(a); */
 #include <stdlib.h>
+
 #define array4_declare_type(name, element_type) array4_declare_type_custom(name, element_type, malloc, realloc)
 #define array4_declare_type_custom(name, element_type, malloc, realloc) \
   typedef struct { \

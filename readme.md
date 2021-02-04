@@ -16,7 +16,7 @@ options
   --null, -n  for results: use the null byte as path delimiter, two null bytes between each set
 ~~~
 
-note that given the requirements of identical size/center-portion-hash/hash, there is no absolute certainty that files are duplicate, only a probability high enough for many practical use cases. only a costly byte-by-byte comparison can give maximum confidence
+note that given the requirements of identical size/center-portion-hash/hash, there is no absolute certainty that files are duplicate, only a probability high enough for many practical use cases. only a costly byte-by-byte comparison can give absolute confidence. if unsure, run with `--cluster` and check the results
 
 # dependencies
 * c 2011 standard library (for example glibc)
@@ -37,7 +37,7 @@ find /home/myuser/directory-with-1000s-of-large-files | sdupes
 ~~~
 
 lists excess duplicate files. the first file is always left out of each set except when --cluster is used.
-if nothing is found, nothing is displayed.
+if no duplicates are found, nothing is displayed.
 
 it can be used with xargs to remove the files
 ~~~
@@ -47,11 +47,11 @@ find | sdupes | xargs -n 1 -d \\n rm
 # technical details
 * all input path names are loaded into memory. in my test, memory usage stayed under 1GB for a 31200 files music library
 * original tiny hashtable and array implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
-* currently written in c via sc, which just maps scheme-like expressions to c
+* currently written in c via sc, which maps scheme-like syntax to c
 
 # possible enhancements
-* optionally compare the md5 sum for extra confidence. a nice md5 implementation can be found [here](https://www.nayuki.io/page/fast-md5-hash-implementation-in-x86-assembly)
-* optional byte-by-byte comparison. that would be resource intensive because large files cannot be kept in memory. for each comparison, each two relevant files have to be fully read again and again
+* optional md5sum comparison, for extra confidence. a nice md5 implementation can be found [here](https://www.nayuki.io/page/fast-md5-hash-implementation-in-x86-assembly)
+* optional byte-by-byte comparison. this can be resource intensive because large files cannot be kept in memory. each two relevant files have to be fully read again and again for comparison
 
 # license
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)

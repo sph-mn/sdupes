@@ -188,7 +188,7 @@
   (return result))
 
 (define (get-sizes paths) (hashtable-64-ids-t paths-t)
-  "the result will only contain ids of regular files (no directories, symlinks or similar)"
+  "the result will only contain ids of regular files (no directories, symlinks, etc)"
   (declare
     existing1 id-t*
     existing2 ids-t*
