@@ -15,7 +15,7 @@ export SC_LOAD_PATH="$root/$s"
 compile_sc() {
   # create the c source code
   cd "$s"
-  find -type f -name "*.sc" -exec sc --parents '{}' "$c" \;
+  find -type f -name "*.sc" | sc --stdin-input-paths --parents "$c"
   cd "$root"
   find "$c" -type f -exec ./exe/format-c -i '{}' \;
 }
