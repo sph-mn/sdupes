@@ -1,8 +1,9 @@
 #!/bin/sh
 
 sph_sc_root="$1"
-destination="$PWD/source/sc/foreign/sph"
-source="$sph_sc_root/source/sc/sph"
+destination="$PWD/source/c/foreign/sph-sc-lib"
+source="$sph_sc_root/source/c-precompiled/sph"
 
+mkdir -p "$destination"
 cd "$source"
-cp -t "$destination" status.h.sc quicksort.h.sc helper.h.sc helper.sc hashtable.h.sc array4.h.sc
+cp -t "$destination" status.h quicksort.h helper.h helper.c hashtable.h array4.h set.h

@@ -1,174 +1,167 @@
 (sc-comment
   "error handling: message lines on standard error, ignore if possible, exit on memory error.
-   ids are indexes in the paths array")
+   ids are indices of the paths array")
 
 (pre-define _POSIX_C_SOURCE 201000)
 
 (pre-include "inttypes.h" "stdio.h"
   "string.h" "errno.h" "sys/stat.h"
   "sys/mman.h" "fcntl.h" "unistd.h"
-  "getopt.h" "foreign/murmur3.c" "./foreign/sph/status.c"
-  "./foreign/sph/hashtable.c" "./foreign/sph/array4.c" "./foreign/sph/helper.c"
-  "./foreign/sph/quicksort.c")
+  "getopt.h" "foreign/murmur3.c" "foreign/sph-sc-lib/status.h"
+  "foreign/sph-sc-lib/hashtable.h" "foreign/sph-sc-lib/set.h" "./foreign/sph-sc-lib/array4.h"
+  "foreign/sph-sc-lib/helper.h" "foreign/sph-sc-lib/quicksort.h")
 
 (pre-define
-  input-path-count-min 1024
-  input-path-count-max 0
-  part-checksum-page-count 1
+  input-path-allocate-min 1024
+  checksum-page-count 4
   flag-display-clusters 1
   flag-null-delimiter 2
   flag-exit 4
   flag-sort-reverse 8
+  flag-ignore-filenames 16
   (error format ...)
   (fprintf stderr (pre-string-concat "error: %s:%d " format "\n") __func__ __LINE__ __VA-ARGS__)
   memory-error (begin (error "%s" "memory allocation failed") (exit 1))
-  (hashtable-hash-checksum key size) (modulo key.a size)
-  (hashtable-equal-checksum key-a key-b) (and (= key-a.a key-b.a) (= key-a.b key-b.b)))
+  (checksum-hash key size) (modulo key.a size)
+  (checksum-equal key-a key-b) (and (= key-a.a key-b.a) (= key-a.b key-b.b))
+  (device-and-inode-hash key size) (modulo key.inode size)
+  (device-and-inode-equal key-a key-b)
+  (and (= key-a.inode key-b.inode) (= key-a.device key-b.device))
+  (ids-add-with-resize a id)
+  (if (and (= (array4-size a) (array4-max-size a)) (ids-resize &a (* 2 (array4-max-size a))))
+    memory-error
+    (array4-add a id)))
 
 (declare
   checksum-t (type (struct (a uint64-t) (b uint64-t)))
-  id-t (type uint64-t)
-  id-ctime-t (type (struct (id id-t) (ctime uint64-t))))
+  id-t (type size-t)
+  id-time-t (type (struct (id id-t) (time time-t)))
+  device-and-inode-t (type (struct (device dev-t) (inode ino-t))))
 
 (array4-declare-type ids id-t)
 (array4-declare-type paths uint8-t*)
 
-(hashtable-declare-type hashtable-64-id uint64-t
-  id-t hashtable-hash-integer hashtable-equal-integer 2)
+(sph-hashtable-declare-type id-by-size off-t
+  id-t sph-hashtable-hash-integer sph-hashtable-equal-integer 2)
 
-(hashtable-declare-type hashtable-64-ids uint64-t
-  ids-t hashtable-hash-integer hashtable-equal-integer 2)
+(sph-hashtable-declare-type ids-by-size off-t
+  ids-t sph-hashtable-hash-integer sph-hashtable-equal-integer 2)
 
-(hashtable-declare-type hashtable-checksum-id checksum-t
-  id-t hashtable-hash-checksum hashtable-equal-checksum 2)
+(sph-hashtable-declare-type id-by-checksum checksum-t id-t checksum-hash checksum-equal 2)
+(sph-hashtable-declare-type ids-by-checksum checksum-t ids-t checksum-hash checksum-equal 2)
+(define device-and-inode-null device-and-inode-t (struct-literal 0))
 
-(hashtable-declare-type hashtable-checksum-ids checksum-t
-  ids-t hashtable-hash-checksum hashtable-equal-checksum 2)
+(sph-set-declare-type-nonull device-and-inode-set device-and-inode-t
+  device-and-inode-hash device-and-inode-equal device-and-inode-null 2)
 
-(define (id-ctime-less? a b c) (uint8-t void* ssize-t ssize-t)
+(define (simple-basename path) (uint8-t* uint8-t*)
+  (define slash-pointer uint8-t* (strrchr path #\/))
+  (return (if* slash-pointer (+ 1 slash-pointer) path)))
+
+(define (file-open path out) (uint8-t uint8-t* int*)
+  (set *out (open path O-RDONLY))
+  (if (< *out 0) (begin (error "could not open %s %s" (strerror errno) path) (return 1)))
+  (return 0))
+
+(define (file-stat file path out) (uint8-t int uint8-t* (struct stat*))
+  (if (fstat file out) (begin (error "could not stat %s %s" (strerror errno) path) (return 1)))
+  (return 0))
+
+(define (file-size file path out) (uint8-t int uint8-t* off-t*)
+  (declare stat-info (struct stat))
+  (if (file-stat file path &stat-info) (return 1))
+  (set *out stat-info.st-size)
+  (return 0))
+
+(define (file-to-mmap file size out) (uint8-t int off-t uint8-t**)
+  (set *out (mmap 0 size PROT-READ MAP-SHARED file 0))
+  (close file)
+  (if (= MAP-FAILED *out) (begin (error "%s" (strerror errno)) (return 1)))
+  (return 0))
+
+(define (id-time-less? a b c) (uint8-t void* ssize-t ssize-t)
   (return
-    (< (struct-get (array-get (convert-type a id-ctime-t*) b) ctime)
-      (struct-get (array-get (convert-type a id-ctime-t*) c) ctime))))
+    (< (struct-get (array-get (convert-type a id-time-t*) b) time)
+      (struct-get (array-get (convert-type a id-time-t*) c) time))))
 
-(define (id-ctime-greater? a b c) (uint8-t void* ssize-t ssize-t)
+(define (id-time-greater? a b c) (uint8-t void* ssize-t ssize-t)
   (return
-    (> (struct-get (array-get (convert-type a id-ctime-t*) b) ctime)
-      (struct-get (array-get (convert-type a id-ctime-t*) c) ctime))))
+    (> (struct-get (array-get (convert-type a id-time-t*) b) time)
+      (struct-get (array-get (convert-type a id-time-t*) c) time))))
 
-(define (id-ctime-swapper a b c) (void void* ssize-t ssize-t)
-  (declare d id-ctime-t)
+(define (id-time-swapper a b c) (void void* ssize-t ssize-t)
+  (declare d id-time-t)
   (set
-    d (array-get (convert-type a id-ctime-t*) b)
-    (array-get (convert-type a id-ctime-t*) b) (array-get (convert-type a id-ctime-t*) c)
-    (array-get (convert-type a id-ctime-t*) c) d))
+    d (array-get (convert-type a id-time-t*) b)
+    (array-get (convert-type a id-time-t*) b) (array-get (convert-type a id-time-t*) c)
+    (array-get (convert-type a id-time-t*) c) d))
 
-(define (sort-ids-by-ctime ids paths sort-descending) (uint8-t ids-t paths-t uint8-t)
-  "sort ids in-place via temporary array of pairs of id and ctime"
+(define (sort-ids-by-mtime ids paths sort-descending) (uint8-t ids-t paths-t uint8-t)
+  "sort ids in-place via temporary array of pairs of id and mtime"
   (declare
     file int
-    i size-t
     id-count size-t
-    stat-info (struct stat)
+    id id-t
+    ids-time id-time-t*
     path uint8-t*
-    ids-ctime id-ctime-t*)
-  (set id-count (array4-size ids) ids-ctime (malloc (* id-count (sizeof id-ctime-t))))
-  (if (not ids-ctime) memory-error)
-  (for ((set i 0) (< i id-count) (set+ i 1))
-    (set path (array4-get-at paths (array4-get-at ids i)) file (open path O-RDONLY))
-    (if (< file 0)
-      (begin (error "couldnt open %s %s" (strerror errno) path) (free ids-ctime) (return 1)))
-    (if (fstat file &stat-info)
-      (begin
-        (error "couldnt stat %s %s" (strerror errno) path)
-        (close file)
-        (free ids-ctime)
-        (return 1)))
-    (close file)
-    (struct-set (array-get ids-ctime i) id (array4-get-at ids i) ctime stat-info.st-ctime))
-  (quicksort (if* sort-descending id-ctime-greater? id-ctime-less?) id-ctime-swapper
-    ids-ctime 0 (- id-count 1))
-  (for ((set i 0) (< i id-count) (set+ i 1))
-    (set (array4-get-at ids i) (struct-get (array-get ids-ctime i) id)))
-  (free ids-ctime)
+    stat-info (struct stat))
+  (set id-count (array4-size ids) ids-time (malloc (* id-count (sizeof id-time-t))))
+  (if (not ids-time) memory-error)
+  (for ((define i size-t 0) (< i id-count) (set+ i 1))
+    (set id (array4-get-at ids i) path (array4-get-at paths id))
+    (if (file-open path &file) continue)
+    (if (not (file-stat file path &stat-info))
+      (struct-set (array-get ids-time i) id id time stat-info.st-mtime))
+    (close file))
+  (quicksort (if* sort-descending id-time-greater? id-time-less?) id-time-swapper
+    ids-time 0 (- id-count 1))
+  (for ((define i size-t 0) (< i id-count) (set+ i 1))
+    (set (array4-get-at ids i) (struct-get (array-get ids-time i) id)))
+  (free ids-time)
   (return 0))
 
 (define (display-help) void
   (printf "usage: sdupes\n")
   (printf "description\n")
   (printf
-    "  read file paths from standard input and display paths of excess duplicate files, each set sorted by creation time ascending.\n")
+    "  read file paths from standard input and display paths of excess duplicate files sorted by modification time ascending.\n")
   (printf
-    "  considers only regular files. files are duplicate if all of the following properties are identical:\n")
-  (printf "  * file size\n")
-  (printf "  * murmur3 hash of a center portion of size page size\n")
-  (printf "  * murmur3 hash of the whole file\n")
+    "  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n")
+  (printf "  * size\n")
+  (printf "  * murmur3 hash of a center portion\n")
+  (printf "  * name or content\n")
   (printf "options\n")
   (printf "  --help, -h  display this help text\n")
-  (printf "  --cluster, -c  display all duplicate paths, two newlines between each set\n")
+  (printf "  --cluster, -c  display all duplicate paths. two newlines between sets\n")
   (printf
-    "  --null, -n for results: use the null byte as path delimiter, two null bytes between each set\n")
-  (printf "  --sort-reverse, -s  sort clusters by creation time descending\n"))
+    "  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hash, and name are equal\n")
+  (printf "  --null, -0  use a null byte to delimit paths. two null bytes between sets\n")
+  (printf "  --sort-reverse, -s  sort clusters by modification time descending\n"))
 
 (define (cli argc argv) (uint8-t int char**)
   (declare
     opt int
+    options uint8-t
     longopts
-    (array (struct option) 5
+    (array (struct option) 6
       (struct-literal "help" no-argument 0 #\h) (struct-literal "cluster" no-argument 0 #\c)
-      (struct-literal "null" no-argument 0 #\n) (struct-literal "sort-reverse" no-argument 0 #\s)
-      (struct-literal 0 0 0 0)))
-  (define options uint8-t 0)
+      (struct-literal "null" no-argument 0 #\0) (struct-literal "sort-reverse" no-argument 0 #\s)
+      (struct-literal "ignore-filenames" no-argument 0 #\b) (struct-literal 0 0 0 0)))
+  (set options 0)
   (while (not (= -1 (set opt (getopt-long argc argv "chns" longopts 0))))
     (case = opt
       (#\h (display-help) (set options (bit-or flag-exit options)) break)
       (#\c (set options (bit-or flag-display-clusters options)))
-      (#\n (set options (bit-or flag-null-delimiter options)))
-      (#\s (set options (bit-or flag-sort-reverse options)))))
+      (#\0 (set options (bit-or flag-null-delimiter options)))
+      (#\s (set options (bit-or flag-sort-reverse options)))
+      (#\b (set options (bit-or flag-ignore-filenames options)))))
   (return options))
-
-(define (get-checksum path center-page-count page-size result)
-  (uint8-t uint8-t* size-t size-t checksum-t*)
-  "center-page-count and page-size are optional and can be zero.
-   if center-page-count is not zero, only a centered part of the file is checksummed.
-   in this case page-size must also be non-zero"
-  (declare
-    file int
-    file-buffer uint8-t*
-    stat-info (struct stat)
-    temp (array uint64-t 2)
-    part-start size-t
-    part-length size-t)
-  (set file (open path O-RDONLY))
-  (if (< file 0) (begin (error "couldnt open %s %s" (strerror errno) path) (return 1)))
-  (if (fstat file &stat-info)
-    (begin (error "couldnt stat %s %s" (strerror errno) path) (close file) (return 1)))
-  (if stat-info.st-size
-    (if center-page-count
-      (if (> stat-info.st-size (* 2 page-size part-checksum-page-count))
-        (begin
-          (set
-            part-start (/ stat-info.st-size page-size)
-            part-start (if* (> 3 part-start) page-size (* page-size (/ part-start 2)))
-            part-length (* page-size part-checksum-page-count))
-          (if (> part-length stat-info.st-size) (set part-length (- stat-info.st-size part-start))))
-        (begin (set result:a 0 result:b 0) (close file) (return 0)))
-      (set part-start 0 part-length stat-info.st-size))
-    (begin (set result:a 0 result:b 0) (close file) (return 0)))
-  (if (not page-size) (set part-length stat-info.st-size))
-  (set file-buffer (mmap 0 part-length PROT-READ MAP-SHARED file part-start))
-  (close file)
-  (if (= MAP-FAILED file-buffer) (begin (error "%s" (strerror errno)) (return 1)))
-  (MurmurHash3_x64_128 file-buffer part-length 0 temp)
-  (munmap file-buffer part-length)
-  (set result:a (array-get temp 0) result:b (array-get temp 1))
-  (return 0))
 
 (define (get-input-paths) paths-t
   "read newline separated paths from standard input and return in paths_t array"
-  (array4-declare result paths-t)
-  (declare line char* line-copy char* line-size size-t char-count ssize-t)
+  (declare result paths-t line char* line-copy char* line-size size-t char-count ssize-t)
   (set line 0 line-size 0)
-  (if (paths-new input-path-count-min &result) memory-error)
+  (if (paths-new input-path-allocate-min &result) memory-error)
   (set char-count (getline &line &line-size stdin))
   (while (not (= -1 char-count))
     (if (not line-size) continue)
@@ -188,115 +181,189 @@
   (free line)
   (return result))
 
-(define (get-sizes paths) (hashtable-64-ids-t paths-t)
+(define (get-duplicated-ids-by-size paths) (ids-by-size-t paths-t)
   "the result will only contain ids of regular files (no directories, symlinks, etc)"
   (declare
-    existing1 id-t*
-    existing2 ids-t*
-    ht1 hashtable-64-id-t
-    ht2 hashtable-64-ids-t
+    id-by-size id-by-size-t
+    id id-t*
+    ids-by-size ids-by-size-t
+    ids ids-t*
+    new-ids ids-t
+    device-and-inode device-and-inode-t
+    device-and-inode-set device-and-inode-set-t
     stat-info (struct stat))
-  (array4-declare ids ids-t)
   (if
-    (or (hashtable-64-id-new (array4-size paths) &ht1)
-      (hashtable-64-ids-new (array4-size paths) &ht2))
+    (or (id-by-size-new (array4-size paths) &id-by-size)
+      (ids-by-size-new (array4-size paths) &ids-by-size)
+      (device-and-inode-set-new (array4-size paths) &device-and-inode-set))
     memory-error)
-  (while (array4-in-range paths)
-    (if (lstat (array4-get paths) &stat-info) (error "%s %s\n" (strerror errno) (array4-get paths)))
-    (if (not (S-ISREG stat-info.st_mode)) (begin (array4-forward paths) continue))
-    (set existing1 (hashtable-64-id-get ht1 stat-info.st-size))
-    (if existing1
-      (begin
-        (set existing2 (hashtable-64-ids-get ht2 stat-info.st-size))
-        (if existing2
-          (begin
-            (if (= (array4-size *existing2) (array4-max-size *existing2))
-              (if (ids-resize existing2 (* 2 (array4-max-size *existing2))) memory-error))
-            (array4-add *existing2 paths.current))
-          (begin
-            (if (ids-new 2 &ids) memory-error)
-            (array4-add ids *existing1)
-            (array4-add ids paths.current)
-            (hashtable-64-ids-set ht2 stat-info.st-size ids))))
-      (hashtable-64-id-set ht1 stat-info.st-size paths.current))
-    (array4-forward paths))
-  (hashtable-64-id-free ht1)
-  (return ht2))
+  (for ((define i id-t 0) (< i (array4-size paths)) (set+ i 1))
+    (if (lstat (array4-get-at paths i) &stat-info)
+      (begin (error "could not lstat %s %s\n" (strerror errno) (array4-get-at paths i)) continue))
+    (if (not (S-ISREG stat-info.st_mode)) continue)
+    (struct-set device-and-inode device stat-info.st-dev inode stat-info.st-ino)
+    (if (device-and-inode-set-get device-and-inode-set device-and-inode) continue
+      (device-and-inode-set-add device-and-inode-set device-and-inode))
+    (set id (id-by-size-get id-by-size stat-info.st-size))
+    (if (not id) (begin (id-by-size-set id-by-size stat-info.st-size i) continue))
+    (set ids (ids-by-size-get ids-by-size stat-info.st-size))
+    (if ids (begin (ids-add-with-resize *ids i) continue))
+    (if (ids-new 2 &new-ids) memory-error)
+    (array4-add new-ids *id)
+    (array4-add new-ids i)
+    (ids-by-size-set ids-by-size stat-info.st-size new-ids))
+  (id-by-size-free id-by-size)
+  (device-and-inode-set-free device-and-inode-set)
+  (return ids-by-size))
 
-(define (get-checksums paths ids center-page-count page-size)
-  (hashtable-checksum-ids-t paths-t ids-t size-t size-t)
-  "assumes that all ids are for regular files"
+(define (get-checksum path center-page-count page-size result)
+  (uint8-t uint8-t* size-t size-t checksum-t*)
+  "center-page-count and page-size are optional and can be zero.
+   if center-page-count is not zero, only a centered portion of the file is checksummed.
+   in this case page-size must also be non-zero"
+  (declare
+    file int
+    mmap-buffer uint8-t*
+    stat-info (struct stat)
+    checksum (array uint64-t 2)
+    portion-start size-t
+    portion-length size-t)
+  (if (file-open path &file) (return 1))
+  (if (file-stat file path &stat-info) (begin (close file) (return 1)))
+  (if stat-info.st-size
+    (if (and center-page-count (> stat-info.st-size (* 2 page-size center-page-count)))
+      (begin
+        (set
+          portion-start (/ stat-info.st-size page-size)
+          portion-start (if* (> 3 portion-start) page-size (* page-size (/ portion-start 2)))
+          portion-length (* page-size center-page-count))
+        (if (> portion-length stat-info.st-size)
+          (set portion-length (- stat-info.st-size portion-start))))
+      (set portion-start 0 portion-length stat-info.st-size))
+    (begin (set result:a 0 result:b 0) (close file) (return 0)))
+  (set mmap-buffer (mmap 0 portion-length PROT-READ MAP-SHARED file portion-start))
+  (close file)
+  (if (= MAP-FAILED mmap-buffer) (begin (error "%s" (strerror errno)) (return 1)))
+  (MurmurHash3_x64_128 mmap-buffer portion-length 0 checksum)
+  (munmap mmap-buffer portion-length)
+  (set result:a (array-get checksum 0) result:b (array-get checksum 1))
+  (return 0))
+
+(define (get-ids-by-checksum paths ids page-count page-size)
+  (ids-by-checksum-t paths-t ids-t size-t size-t)
+  "assumes that all ids are of regular files"
   (declare
     checksum checksum-t
-    existing1 id-t*
-    existing2 ids-t*
-    ht1 hashtable-checksum-id-t
-    ht2 hashtable-checksum-ids-t)
-  (array4-declare value-ids ids-t)
+    id id-t
+    checksum-id id-t*
+    checksum-ids ids-t*
+    new-checksum-ids ids-t
+    id-by-checksum id-by-checksum-t
+    ids-by-checksum ids-by-checksum-t)
   (if
-    (or (hashtable-checksum-id-new (array4-size ids) &ht1)
-      (hashtable-checksum-ids-new (array4-size ids) &ht2))
+    (or (id-by-checksum-new (array4-size ids) &id-by-checksum)
+      (ids-by-checksum-new (array4-size ids) &ids-by-checksum))
     memory-error)
   (while (array4-in-range ids)
-    (if (get-checksum (array4-get-at paths (array4-get ids)) center-page-count page-size &checksum)
-      (error "couldnt calculate checksum for %s" (array4-get-at paths (array4-get ids))))
-    (set existing1 (hashtable-checksum-id-get ht1 checksum))
-    (if existing1
+    (set id (array4-get ids))
+    (if (get-checksum (array4-get-at paths id) page-count page-size &checksum)
+      (error "could not calculate checksum for %s" (array4-get-at paths id)))
+    (set checksum-id (id-by-checksum-get id-by-checksum checksum))
+    (if checksum-id
       (begin
-        (set existing2 (hashtable-checksum-ids-get ht2 checksum))
-        (if existing2
+        (set checksum-ids (ids-by-checksum-get ids-by-checksum checksum))
+        (if checksum-ids (ids-add-with-resize *checksum-ids id)
           (begin
-            (if (= (array4-size *existing2) (array4-max-size *existing2))
-              (if (ids-resize existing2 (* 2 (array4-max-size *existing2))) memory-error))
-            (array4-add *existing2 (array4-get ids)))
-          (begin
-            (if (ids-new 2 &value-ids) memory-error)
-            (array4-add value-ids *existing1)
-            (array4-add value-ids (array4-get ids))
-            (hashtable-checksum-ids-set ht2 checksum value-ids))))
-      (hashtable-checksum-id-set ht1 checksum (array4-get ids)))
+            (if (ids-new 2 &new-checksum-ids) memory-error)
+            (array4-add new-checksum-ids *checksum-id)
+            (array4-add new-checksum-ids id)
+            (ids-by-checksum-set ids-by-checksum checksum new-checksum-ids))))
+      (id-by-checksum-set id-by-checksum checksum id))
     (array4-forward ids))
-  (hashtable-checksum-id-free ht1)
-  (return ht2))
+  (id-by-checksum-free id-by-checksum)
+  (return ids-by-checksum))
 
-(define (display-result paths ht cluster null sort-reverse)
-  (void paths-t hashtable-checksum-ids-t uint8-t uint8-t uint8-t)
-  "also frees hashtable and its values"
-  (declare i size-t ids ids-t delimiter uint8-t)
-  (set delimiter (if* null #\0 #\newline))
-  (for ((set i 0) (< i ht.size) (set+ i 1))
-    (if (not (array-get ht.flags i)) continue)
-    (set ids (array-get ht.values i))
-    (if (sort-ids-by-ctime ids paths sort-reverse) continue)
-    (if cluster (printf "%c" delimiter) (array4-forward ids))
-    (while (array4-in-range ids)
-      (printf "%s%c" (array4-get-at paths (array4-get ids)) delimiter)
-      (array4-forward ids))
-    (array4-free ids))
-  (hashtable-checksum-ids-free ht))
+(define (get-duplicates paths ids ignore-filenames) (ids-t paths-t ids-t uint8-t)
+  "return ids whose file name or file content is equal"
+  (declare
+    first-content uint8-t*
+    path uint8-t*
+    name uint8-t*
+    first-name uint8-t*
+    size off-t
+    id id-t
+    file int
+    content uint8-t*)
+  (array4-declare duplicates ids-t)
+  (if (not (array4-in-range ids)) (return duplicates))
+  (set id (array4-get ids) path (array4-get-at paths id) first-name (simple-basename path))
+  (if (or (file-open path &file) (file-size file path &size)) (return duplicates))
+  (if (not size) (return ids))
+  (file-to-mmap file size &first-content)
+  (if (ids-new (array4-size ids) &duplicates) memory-error)
+  (array4-add duplicates id)
+  (array4-forward ids)
+  (while (array4-in-range ids)
+    (set id (array4-get ids) path (array4-get-at paths id) name (simple-basename path))
+    (if (or ignore-filenames (strcmp first-name name))
+      (begin
+        (if (not (or (file-open path &file) (file-to-mmap file size &content)))
+          (begin
+            (if (not (memcmp first-content content size)) (array4-add duplicates id))
+            (munmap content size))))
+      (array4-add duplicates id))
+    (array4-forward ids))
+  (munmap first-content size)
+  (if (= 1 (array4-size duplicates)) (array4-remove duplicates))
+  (return duplicates))
+
+(define (display-duplicates paths ids delimiter cluster-count display-cluster sort-reverse)
+  (void paths-t ids-t uint8-t id-t uint8-t uint8-t)
+  "assumes that ids contains at least two entries"
+  (if (sort-ids-by-mtime ids paths sort-reverse) return)
+  (if display-cluster (if cluster-count (putchar delimiter)) (array4-forward ids))
+  (do-while (array4-in-range ids)
+    (printf "%s%c" (array4-get-at paths (array4-get ids)) delimiter)
+    (array4-forward ids)))
 
 (define (main argc argv) (int int char**)
   (declare
-    sizes-ht hashtable-64-ids-t
-    part-checksums-ht hashtable-checksum-ids-t
-    i size-t
-    j size-t
+    delimiter uint8-t
+    duplicates ids-t
+    ids-by-checksum ids-by-checksum-t
+    ids-by-size ids-by-size-t
+    ids ids-t
     options uint8-t
-    page-size size-t)
-  (array4-declare paths paths-t)
+    page-size size-t
+    cluster-count id-t
+    paths paths-t)
   (set options (cli argc argv))
   (if (bit-and flag-exit options) (exit 0))
-  (set page-size (sysconf _SC-PAGE-SIZE) paths (get-input-paths) sizes-ht (get-sizes paths))
-  (for ((set i 0) (< i sizes-ht.size) (set+ i 1))
-    (if (not (array-get sizes-ht.flags i)) continue)
-    (set part-checksums-ht
-      (get-checksums paths (array-get sizes-ht.values i) part-checksum-page-count page-size))
-    (array4-free (array-get sizes-ht.values i))
-    (for ((set j 0) (< j part-checksums-ht.size) (set+ j 1))
-      (if (not (array-get part-checksums-ht.flags j)) continue)
-      (display-result paths (get-checksums paths (array-get part-checksums-ht.values j) 0 0)
-        (bit-and options flag-display-clusters) (bit-and options flag-null-delimiter)
-        (bit-and options flag-sort-reverse))
-      (array4-free (array-get part-checksums-ht.values j)))
-    (hashtable-checksum-ids-free part-checksums-ht))
+  (set
+    page-size 4096
+    delimiter (if* (bit-and options flag-null-delimiter) #\0 #\newline)
+    paths (get-input-paths)
+    ids-by-size (get-duplicated-ids-by-size paths)
+    cluster-count 0)
+  (for ((define i size-t 0) (< i ids-by-size.size) (set+ i 1))
+    (if (not (array-get ids-by-size.flags i)) continue)
+    (set
+      ids (array-get ids-by-size.values i)
+      ids-by-checksum (get-ids-by-checksum paths ids checksum-page-count page-size))
+    (array4-free ids)
+    (for ((define j size-t 0) (< j ids-by-checksum.size) (set+ j 1))
+      (if (not (array-get ids-by-checksum.flags j)) continue)
+      (set
+        ids (array-get ids-by-checksum.values j)
+        duplicates (get-duplicates paths ids (bit-and options flag-ignore-filenames)))
+      (if (not (= duplicates.data ids.data)) (array4-free ids))
+      (if (< 1 (array4-size duplicates))
+        (begin
+          (display-duplicates paths duplicates
+            delimiter cluster-count (bit-and options flag-display-clusters)
+            (bit-and options flag-sort-reverse))
+          (set+ cluster-count 1)))
+      (array4-free duplicates))
+    (ids-by-checksum-free ids-by-checksum))
+  (ids-by-size-free ids-by-size)
   (return 0))
