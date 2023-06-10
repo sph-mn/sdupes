@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <getopt.h>
-#include "./foreign/murmur3.c"
+#include <foreign/murmur3.c>
 #include "./foreign/sph/status.c"
 #include "./foreign/sph/hashtable.c"
 #include "./foreign/sph/array4.c"
@@ -187,6 +187,8 @@ uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, 
   result->b = temp[1];
   return (0);
 }
+
+/** read newline separated paths from standard input and return in paths_t array */
 paths_t get_input_paths() {
   array4_declare(result, paths_t);
   char* line;

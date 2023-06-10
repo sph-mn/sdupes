@@ -7,7 +7,7 @@
 (pre-include "inttypes.h" "stdio.h"
   "string.h" "errno.h" "sys/stat.h"
   "sys/mman.h" "fcntl.h" "unistd.h"
-  "getopt.h" "./foreign/murmur3.c" "./foreign/sph/status.c"
+  "getopt.h" "foreign/murmur3.c" "./foreign/sph/status.c"
   "./foreign/sph/hashtable.c" "./foreign/sph/array4.c" "./foreign/sph/helper.c"
   "./foreign/sph/quicksort.c")
 
@@ -164,6 +164,7 @@
   (return 0))
 
 (define (get-input-paths) paths-t
+  "read newline separated paths from standard input and return in paths_t array"
   (array4-declare result paths-t)
   (declare line char* line-copy char* line-size size-t char-count ssize-t)
   (set line 0 line-size 0)

@@ -1,17 +1,4 @@
-(sc-comment "depends on sph/status.c and libc")
-(pre-include "stdlib.h" "inttypes.h" "stdio.h")
-(enum (sph-helper-status-id-memory))
-
-(pre-define
-  sph-helper-status-group (convert-type "sph" uint8-t*)
-  (sph-helper-malloc size result)
-  (begin
-    "add explicit type cast to prevent compiler warning"
-    (sph-helper-primitive-malloc size (convert-type result void**)))
-  (sph-helper-malloc-string size result)
-  (sph-helper-primitive-malloc-string size (convert-type result uint8-t**))
-  (sph-helper-calloc size result) (sph-helper-primitive-calloc size (convert-type result void**))
-  (sph-helper-realloc size result) (sph-helper-primitive-realloc size (convert-type result void**)))
+(pre-include "stdlib.h" "stdio.h" "sph/helper.h")
 
 (define (sph-helper-status-description a) (uint8-t* status-t)
   (declare b uint8-t*)
@@ -24,7 +11,7 @@
   (case = a.id (sph-helper-status-id-memory (set b "memory")) (else (set b "unknown"))))
 
 (define (sph-helper-primitive-malloc size result) (status-t size-t void**)
-  "allocation helpers use status-t and have a consistent interface"
+  "allocation helpers use status-t and have the same interface"
   status-declare
   (declare a void*)
   (set a (malloc size))
@@ -48,11 +35,11 @@
     (set status.group sph-helper-status-group status.id sph-helper-status-id-memory))
   status-return)
 
-(define (sph-helper-primitive-realloc size block) (status-t size-t void**)
+(define (sph-helper-primitive-realloc size memory) (status-t size-t void**)
   status-declare
   (declare a void*)
-  (set a (realloc *block size))
-  (if a (set *block a)
+  (set a (realloc *memory size))
+  (if a (set *memory a)
     (set status.group sph-helper-status-group status.id sph-helper-status-id-memory))
   status-return)
 

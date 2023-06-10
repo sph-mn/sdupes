@@ -1,7 +1,16 @@
 
+/* depends on sph/status.c and libc */
 #include <stdlib.h>
+#include <inttypes.h>
 #include <stdio.h>
-#include <sph/helper.h>
+enum { sph_helper_status_id_memory };
+#define sph_helper_status_group ((uint8_t*)("sph"))
+
+/** add explicit type cast to prevent compiler warning */
+#define sph_helper_malloc(size, result) sph_helper_primitive_malloc(size, ((void**)(result)))
+#define sph_helper_malloc_string(size, result) sph_helper_primitive_malloc_string(size, ((uint8_t**)(result)))
+#define sph_helper_calloc(size, result) sph_helper_primitive_calloc(size, ((void**)(result)))
+#define sph_helper_realloc(size, result) sph_helper_primitive_realloc(size, ((void**)(result)))
 uint8_t* sph_helper_status_description(status_t a) {
   uint8_t* b;
   if (sph_helper_status_id_memory == a.id) {
@@ -19,7 +28,7 @@ uint8_t* sph_helper_status_name(status_t a) {
   };
 }
 
-/** allocation helpers use status-t and have the same interface */
+/** allocation helpers use status-t and have a consistent interface */
 status_t sph_helper_primitive_malloc(size_t size, void** result) {
   status_declare;
   void* a;
@@ -55,12 +64,12 @@ status_t sph_helper_primitive_calloc(size_t size, void** result) {
   };
   status_return;
 }
-status_t sph_helper_primitive_realloc(size_t size, void** memory) {
+status_t sph_helper_primitive_realloc(size_t size, void** block) {
   status_declare;
   void* a;
-  a = realloc((*memory), size);
+  a = realloc((*block), size);
   if (a) {
-    *memory = a;
+    *block = a;
   } else {
     status.group = sph_helper_status_group;
     status.id = sph_helper_status_id_memory;

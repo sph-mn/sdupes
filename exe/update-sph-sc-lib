@@ -1,0 +1,8 @@
+#!/bin/sh
+
+sph_sc_root="$1"
+destination="$PWD/source/sc/foreign/sph"
+source="$sph_sc_root/source/sc/sph"
+
+cd "$source"
+cp -t "$destination" status.h.sc quicksort.h.sc helper.h.sc helper.sc hashtable.h.sc array4.h.sc
