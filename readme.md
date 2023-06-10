@@ -48,8 +48,5 @@ find | sdupes | xargs -n 1 -d \\n rm
 * tiny hashtable and array implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
 * currently written in c via sc, which maps scheme-like syntax to readable c. the prepared c code is available under source/c-precompiled
 
-# possible enhancements
-* check if it would be faster to do a byte-by-byte comparison directly by leaving out the full file hashing and file name comparison
-
 # license
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
