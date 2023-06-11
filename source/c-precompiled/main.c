@@ -1,5 +1,5 @@
 
-/* error handling: message lines on standard error, ignore if possible, exit on memory error.
+/* error handling: message lines on standard error. ignore files and continue if possible but exit on memory errors.
    ids are indices of the paths array */
 #define _POSIX_C_SOURCE 201000
 #include <inttypes.h>
@@ -15,7 +15,7 @@
 #include <foreign/sph-sc-lib/status.h>
 #include <foreign/sph-sc-lib/hashtable.h>
 #include <foreign/sph-sc-lib/set.h>
-#include "./foreign/sph-sc-lib/array4.h"
+#include <foreign/sph-sc-lib/array4.h>
 #include <foreign/sph-sc-lib/helper.h>
 #include <foreign/sph-sc-lib/quicksort.h>
 
@@ -105,8 +105,8 @@ void id_time_swapper(void* a, ssize_t b, ssize_t c) {
   ((id_time_t*)(a))[c] = d;
 }
 
-/** sort ids in-place via temporary array of pairs of id and mtime */
-uint8_t sort_ids_by_mtime(ids_t ids, paths_t paths, uint8_t sort_descending) {
+/** sort ids in-place via temporary array of pairs of id and ctime */
+uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths, uint8_t sort_descending) {
   int file;
   size_t id_count;
   id_t id;
@@ -126,7 +126,7 @@ uint8_t sort_ids_by_mtime(ids_t ids, paths_t paths, uint8_t sort_descending) {
     };
     if (!file_stat(file, path, (&stat_info))) {
       (ids_time[i]).id = id;
-      (ids_time[i]).time = stat_info.st_mtime;
+      (ids_time[i]).time = stat_info.st_ctime;
     };
     close(file);
   };
@@ -140,7 +140,7 @@ uint8_t sort_ids_by_mtime(ids_t ids, paths_t paths, uint8_t sort_descending) {
 void display_help() {
   printf("usage: sdupes\n");
   printf("description\n");
-  printf(("  read file paths from standard input and display paths of excess duplicate files sorted by modification time ascending.\n"));
+  printf(("  read file paths from standard input and display paths of excess duplicate files sorted by creation time ascending.\n"));
   printf(("  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n"));
   printf("  * size\n");
   printf("  * murmur3 hashes of start, middle, and end portions\n");
@@ -148,9 +148,9 @@ void display_help() {
   printf("options\n");
   printf("  --help, -h  display this help text\n");
   printf(("  --cluster, -c  display all duplicate paths. two newlines between sets\n"));
-  printf("  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hash, and name are equal\n");
+  printf("  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n");
   printf(("  --null, -0  use a null byte to delimit paths. two null bytes between sets\n"));
-  printf("  --sort-reverse, -s  sort clusters by modification time descending\n");
+  printf("  --sort-reverse, -s  sort clusters by creation time descending\n");
 }
 uint8_t cli(int argc, char** argv) {
   int opt;
@@ -387,7 +387,7 @@ ids_t get_duplicates(paths_t paths, ids_t ids, uint8_t ignore_filenames) {
 
 /** assumes that ids contains at least two entries */
 void display_duplicates(paths_t paths, ids_t ids, uint8_t delimiter, id_t cluster_count, uint8_t display_cluster, uint8_t sort_reverse) {
-  if (sort_ids_by_mtime(ids, paths, sort_reverse)) {
+  if (sort_ids_by_ctime(ids, paths, sort_reverse)) {
     return;
   };
   if (display_cluster) {

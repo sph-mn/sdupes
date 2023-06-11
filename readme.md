@@ -1,4 +1,4 @@
-# sdupes - fast file duplicate detection
+# sdupes - fast duplicate file detection
 
 at this point in time, many duplicate file finders are slow or overengineered. sdupes reads paths from standard input and writes paths of duplicate files to standard output.
 
@@ -23,7 +23,7 @@ find | sdupes | xargs -n 1 -d \\n rm
 ~~~
 usage: sdupes
 description
-  read file paths from standard input and display paths of excess duplicate files sorted by modification time ascending.
+  read file paths from standard input and display paths of excess duplicate files sorted by creation time ascending.
   considers only regular files with differing device id and inode. files are duplicate if all of the following properties match:
   * size
   * murmur3 hashes of start, middle, and end portions
@@ -31,9 +31,9 @@ description
 options
   --help, -h  display this help text
   --cluster, -c  display all duplicate paths. two newlines between sets
-  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hash, and name are equal
+  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal
   --null, -0  use a null byte to delimit paths. two null bytes between sets
-  --sort-reverse, -s  sort clusters by modification time descending
+  --sort-reverse, -s  sort clusters by creation time descending
 ~~~
 
 # dependencies
@@ -59,19 +59,17 @@ this should create `temp/sdupes` which is the final executable and can be taken 
 # performance comparison
 quick tests using bash "time".
 
-714G in 27697 files with 11 duplicates:
-
-| sdupes | 0m0.119s |
-| app1 | 0m2.024s |
-| app2 | 0m3.913s |
-| app3 | 0m10.755s |
+714G in 27697 files with 800M in 11 duplicates:
+* sdupes: 0m0.119s
+* app1: 0m2.024s
+* app2: 0m3.913s
+* app3: 0m10.755s
 
 634G in 538 files with 21G in 67 duplicates:
-
-| sdupes | 0m0.005s (0m2.380s with --ignore-filenames) |
-| app1 | 1m11.140s |
-| app2 | 0m57.232s |
-| app3 | 2m41.197s |
+* sdupes: 0m0.005s (0m2.380s with --ignore-filenames)
+* app1: 1m11.140s
+* app2: 0m57.232s
+* app3: 2m41.197s
 
 # similar projects
 * [rmlint](https://github.com/sahib/rmlint)

@@ -1,5 +1,5 @@
 (sc-comment
-  "error handling: message lines on standard error, ignore if possible, exit on memory error.
+  "error handling: message lines on standard error. ignore files and continue if possible but exit on memory errors.
    ids are indices of the paths array")
 
 (pre-define _POSIX_C_SOURCE 201000)
@@ -8,7 +8,7 @@
   "string.h" "errno.h" "sys/stat.h"
   "sys/mman.h" "fcntl.h" "unistd.h"
   "getopt.h" "foreign/murmur3.c" "foreign/sph-sc-lib/status.h"
-  "foreign/sph-sc-lib/hashtable.h" "foreign/sph-sc-lib/set.h" "./foreign/sph-sc-lib/array4.h"
+  "foreign/sph-sc-lib/hashtable.h" "foreign/sph-sc-lib/set.h" "foreign/sph-sc-lib/array4.h"
   "foreign/sph-sc-lib/helper.h" "foreign/sph-sc-lib/quicksort.h")
 
 (pre-define
@@ -96,8 +96,8 @@
     (array-get (convert-type a id-time-t*) b) (array-get (convert-type a id-time-t*) c)
     (array-get (convert-type a id-time-t*) c) d))
 
-(define (sort-ids-by-mtime ids paths sort-descending) (uint8-t ids-t paths-t uint8-t)
-  "sort ids in-place via temporary array of pairs of id and mtime"
+(define (sort-ids-by-ctime ids paths sort-descending) (uint8-t ids-t paths-t uint8-t)
+  "sort ids in-place via temporary array of pairs of id and ctime"
   (declare
     file int
     id-count size-t
@@ -111,7 +111,7 @@
     (set id (array4-get-at ids i) path (array4-get-at paths id))
     (if (file-open path &file) continue)
     (if (not (file-stat file path &stat-info))
-      (struct-set (array-get ids-time i) id id time stat-info.st-mtime))
+      (struct-set (array-get ids-time i) id id time stat-info.st-ctime))
     (close file))
   (quicksort (if* sort-descending id-time-greater? id-time-less?) id-time-swapper
     ids-time 0 (- id-count 1))
@@ -124,7 +124,7 @@
   (printf "usage: sdupes\n")
   (printf "description\n")
   (printf
-    "  read file paths from standard input and display paths of excess duplicate files sorted by modification time ascending.\n")
+    "  read file paths from standard input and display paths of excess duplicate files sorted by creation time ascending.\n")
   (printf
     "  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n")
   (printf "  * size\n")
@@ -134,9 +134,9 @@
   (printf "  --help, -h  display this help text\n")
   (printf "  --cluster, -c  display all duplicate paths. two newlines between sets\n")
   (printf
-    "  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hash, and name are equal\n")
+    "  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n")
   (printf "  --null, -0  use a null byte to delimit paths. two null bytes between sets\n")
-  (printf "  --sort-reverse, -s  sort clusters by modification time descending\n"))
+  (printf "  --sort-reverse, -s  sort clusters by creation time descending\n"))
 
 (define (cli argc argv) (uint8-t int char**)
   (declare
@@ -305,7 +305,7 @@
 (define (display-duplicates paths ids delimiter cluster-count display-cluster sort-reverse)
   (void paths-t ids-t uint8-t id-t uint8-t uint8-t)
   "assumes that ids contains at least two entries"
-  (if (sort-ids-by-mtime ids paths sort-reverse) return)
+  (if (sort-ids-by-ctime ids paths sort-reverse) return)
   (if display-cluster (if cluster-count (putchar delimiter)) (array4-forward ids))
   (do-while (array4-in-range ids)
     (printf "%s%c" (array4-get-at paths (array4-get ids)) delimiter)
