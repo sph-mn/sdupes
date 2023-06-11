@@ -49,23 +49,25 @@ options
 ~~~
 sh ./exe/compile-c
 ~~~
-this should build the file `temp/sdupes`, which is the final executable and can be taken and copied anywhere, for example into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
+this should create `temp/sdupes` which is the final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
 
 # technical details
 * all input path names are loaded into memory. in my test, memory usage stayed under 1GB for a 31200 files music library
 * tiny hashtable and array implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
-* currently written in c via sc, which maps scheme-like syntax to readable c. the prepared c code is available under source/c-precompiled
+* written in c, currently via sc which maps scheme-like syntax to readable c. the c code is available under source/c-precompiled
 
 # performance comparison
 quick tests using bash "time".
 
 714G in 27697 files with 11 duplicates:
+
 | sdupes | 0m0.119s |
 | app1 | 0m2.024s |
 | app2 | 0m3.913s |
 | app3 | 0m10.755s |
 
 634G in 538 files with 21G in 67 duplicates:
+
 | sdupes | 0m0.005s (0m2.380s with --ignore-filenames) |
 | app1 | 1m11.140s |
 | app2 | 0m57.232s |
