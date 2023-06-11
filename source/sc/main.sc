@@ -324,7 +324,7 @@
   (set options (cli argc argv))
   (if (bit-and flag-exit options) (exit 0))
   (set
-    delimiter (if* (bit-and options flag-null-delimiter) #\0 #\newline)
+    delimiter (if* (bit-and options flag-null-delimiter) 0 #\newline)
     paths (get-input-paths)
     ids-by-size (get-duplicated-ids-by-size paths)
     cluster-count 0)

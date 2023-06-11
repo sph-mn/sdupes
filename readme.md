@@ -1,6 +1,6 @@
 # sdupes - fast file duplicate detection
 
-at this point in time, many duplicate file finders are slow or overengineered. sdupes reads paths from standard input and writes paths of duplicate files to standard output. the list of paths to check can come from any source, for example the `find` utility.
+at this point in time, many duplicate file finders are slow or overengineered. sdupes reads paths from standard input and writes paths of duplicate files to standard output.
 
 # usage
 
@@ -19,7 +19,7 @@ sdupes can be used with xargs to remove duplicate files:
 find | sdupes | xargs -n 1 -d \\n rm
 ~~~
 
-## `sdupes --help`
+## sdupes --help
 ~~~
 usage: sdupes
 description

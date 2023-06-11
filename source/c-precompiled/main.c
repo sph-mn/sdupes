@@ -415,7 +415,7 @@ int main(int argc, char** argv) {
   if (flag_exit & options) {
     exit(0);
   };
-  delimiter = ((options & flag_null_delimiter) ? '0' : '\n');
+  delimiter = ((options & flag_null_delimiter) ? 0 : '\n');
   paths = get_input_paths();
   ids_by_size = get_duplicated_ids_by_size(paths);
   cluster_count = 0;
