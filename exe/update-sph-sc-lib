@@ -4,6 +4,12 @@ sph_sc_root="$1"
 destination="$PWD/source/c/foreign/sph-sc-lib"
 source="$sph_sc_root/source/c-precompiled/sph"
 
-mkdir -p "$destination"
+if test -d "$destination"
+then
+   rm "$destination"/*
+else
+  mkdir -p "$destination"
+fi
+
 cd "$source"
-cp -t "$destination" status.h quicksort.h helper.h helper.c hashtable.h array4.h set.h
+cp -t "$destination" quicksort.h hashtable.h array4.h set.h

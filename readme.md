@@ -3,7 +3,6 @@
 at this point in time, many duplicate file finders are slow or overengineered. sdupes reads paths from standard input and writes paths of duplicate files to standard output.
 
 # usage
-
 ## list duplicates
 ~~~
 find /home/myuser/directory-with-10000s-of-large-files | sdupes
@@ -38,12 +37,9 @@ options
 
 # dependencies
 * c 2011 standard library (for example glibc)
-* posix 2008 features (linux, freebsd)
+* posix 2008 features (for example linux or freebsd)
 * for the provided compile script: shell, gcc
 * optional: [sph-sc](https://github.com/sph-mn/sph-sc) and clang-format to edit the code in sc
-
-# license
-[gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
 
 # installation
 ~~~
@@ -56,8 +52,11 @@ this should create `temp/sdupes` which is the final executable and can be taken 
 * tiny hashtable and array implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
 * written in c, currently via sc which maps scheme-like syntax to readable c. the c code is available under source/c-precompiled
 
+# license
+[gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
+
 # performance comparison
-quick tests using bash "time".
+quick tests using bash "time" comparing sdupes to other popular common duplicate finders.
 
 714G in 27697 files with 800M in 11 duplicates:
 * sdupes: 0m0.119s

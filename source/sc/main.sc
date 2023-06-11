@@ -7,9 +7,8 @@
 (pre-include "inttypes.h" "stdio.h"
   "string.h" "errno.h" "sys/stat.h"
   "sys/mman.h" "fcntl.h" "unistd.h"
-  "getopt.h" "foreign/murmur3.c" "foreign/sph-sc-lib/status.h"
-  "foreign/sph-sc-lib/hashtable.h" "foreign/sph-sc-lib/set.h" "foreign/sph-sc-lib/array4.h"
-  "foreign/sph-sc-lib/helper.h" "foreign/sph-sc-lib/quicksort.h")
+  "getopt.h" "foreign/murmur3.c" "foreign/sph-sc-lib/hashtable.h"
+  "foreign/sph-sc-lib/set.h" "foreign/sph-sc-lib/array4.h" "foreign/sph-sc-lib/quicksort.h")
 
 (pre-define
   input-path-allocate-min 1024

@@ -12,11 +12,9 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <foreign/murmur3.c>
-#include <foreign/sph-sc-lib/status.h>
 #include <foreign/sph-sc-lib/hashtable.h>
 #include <foreign/sph-sc-lib/set.h>
 #include <foreign/sph-sc-lib/array4.h>
-#include <foreign/sph-sc-lib/helper.h>
 #include <foreign/sph-sc-lib/quicksort.h>
 
 #define input_path_allocate_min 1024
