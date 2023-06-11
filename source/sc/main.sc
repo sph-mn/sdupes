@@ -13,7 +13,7 @@
 
 (pre-define
   input-path-allocate-min 1024
-  checksum-page-count 4
+  checksum-portion-size 16384
   flag-display-clusters 1
   flag-null-delimiter 2
   flag-exit 4
@@ -22,8 +22,8 @@
   (error format ...)
   (fprintf stderr (pre-string-concat "error: %s:%d " format "\n") __func__ __LINE__ __VA-ARGS__)
   memory-error (begin (error "%s" "memory allocation failed") (exit 1))
-  (checksum-hash key size) (modulo key.a size)
-  (checksum-equal key-a key-b) (and (= key-a.a key-b.a) (= key-a.b key-b.b))
+  (checksum-hash key size) (modulo (array-get key.data 1) size)
+  (checksum-equal key-a key-b) (not (memcmp key-a.data key-b.data 48))
   (device-and-inode-hash key size) (modulo key.inode size)
   (device-and-inode-equal key-a key-b)
   (and (= key-a.inode key-b.inode) (= key-a.device key-b.device))
@@ -33,7 +33,7 @@
     (array4-add a id)))
 
 (declare
-  checksum-t (type (struct (a uint64-t) (b uint64-t)))
+  checksum-t (type (struct (data (array uint64-t 6))))
   id-t (type size-t)
   id-time-t (type (struct (id id-t) (time time-t)))
   device-and-inode-t (type (struct (device dev-t) (inode ino-t))))
@@ -128,7 +128,7 @@
   (printf
     "  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n")
   (printf "  * size\n")
-  (printf "  * murmur3 hash of a center portion\n")
+  (printf "  * murmur3 hashes of start, middle, and end portions\n")
   (printf "  * name or content\n")
   (printf "options\n")
   (printf "  --help, -h  display this help text\n")
@@ -146,9 +146,9 @@
     (array (struct option) 6
       (struct-literal "help" no-argument 0 #\h) (struct-literal "cluster" no-argument 0 #\c)
       (struct-literal "null" no-argument 0 #\0) (struct-literal "sort-reverse" no-argument 0 #\s)
-      (struct-literal "ignore-filenames" no-argument 0 #\b) (struct-literal 0 0 0 0)))
+      (struct-literal "ignore-filenames" no-argument 0 #\b) (struct-literal 0)))
   (set options 0)
-  (while (not (= -1 (set opt (getopt-long argc argv "chns" longopts 0))))
+  (while (not (= -1 (set opt (getopt-long argc argv "ch0sb" longopts 0))))
     (case = opt
       (#\h (display-help) (set options (bit-or flag-exit options)) break)
       (#\c (set options (bit-or flag-display-clusters options)))
@@ -216,45 +216,31 @@
   (device-and-inode-set-free device-and-inode-set)
   (return ids-by-size))
 
-(define (get-checksum path center-page-count page-size result)
-  (uint8-t uint8-t* size-t size-t checksum-t*)
-  "center-page-count and page-size are optional and can be zero.
-   if center-page-count is not zero, only a centered portion of the file is checksummed.
-   in this case page-size must also be non-zero"
-  (declare
-    file int
-    mmap-buffer uint8-t*
-    stat-info (struct stat)
-    checksum (array uint64-t 2)
-    portion-start size-t
-    portion-length size-t)
-  (if (file-open path &file) (return 1))
-  (if (file-stat file path &stat-info) (begin (close file) (return 1)))
-  (if stat-info.st-size
-    (if (and center-page-count (> stat-info.st-size (* 2 page-size center-page-count)))
-      (begin
-        (set
-          portion-start (/ stat-info.st-size page-size)
-          portion-start (if* (> 3 portion-start) page-size (* page-size (/ portion-start 2)))
-          portion-length (* page-size center-page-count))
-        (if (> portion-length stat-info.st-size)
-          (set portion-length (- stat-info.st-size portion-start))))
-      (set portion-start 0 portion-length stat-info.st-size))
-    (begin (set result:a 0 result:b 0) (close file) (return 0)))
-  (set mmap-buffer (mmap 0 portion-length PROT-READ MAP-SHARED file portion-start))
+(define (get-checksum path out) (uint8-t uint8-t* checksum-t*)
+  (declare buffer uint8-t* file int stat-info (struct stat))
+  (define null checksum-t (struct-literal 0))
+  (set file 0 *out null)
+  (if (or (file-open path &file) (file-stat file path &stat-info)) (return 1))
+  (if (not stat-info.st-size) (return 0))
+  (set buffer (mmap 0 stat-info.st-size PROT-READ MAP-SHARED file 0))
+  (if (= MAP-FAILED buffer) (begin (error "%s" (strerror errno)) (return 1)))
   (close file)
-  (if (= MAP-FAILED mmap-buffer) (begin (error "%s" (strerror errno)) (return 1)))
-  (MurmurHash3_x64_128 mmap-buffer portion-length 0 checksum)
-  (munmap mmap-buffer portion-length)
-  (set result:a (array-get checksum 0) result:b (array-get checksum 1))
+  (if (< stat-info.st-size (* 2 3 checksum-portion-size))
+    (MurmurHash3_x64_128 buffer stat-info.st-size 0 out:data)
+    (begin
+      (MurmurHash3_x64_128 buffer checksum-portion-size 0 out:data)
+      (MurmurHash3_x64_128 (+ (- (/ stat-info.st-size 2) (/ checksum-portion-size 2)) buffer)
+        checksum-portion-size 0 (+ 2 out:data))
+      (MurmurHash3_x64_128 (+ (- stat-info.st-size checksum-portion-size) buffer)
+        checksum-portion-size 0 (+ 4 out:data))))
+  (munmap buffer stat-info.st-size)
   (return 0))
 
-(define (get-ids-by-checksum paths ids page-count page-size)
-  (ids-by-checksum-t paths-t ids-t size-t size-t)
+(define (get-ids-by-checksum paths ids) (ids-by-checksum-t paths-t ids-t)
   "assumes that all ids are of regular files"
   (declare
-    checksum checksum-t
     id id-t
+    checksum checksum-t
     checksum-id id-t*
     checksum-ids ids-t*
     new-checksum-ids ids-t
@@ -266,7 +252,7 @@
     memory-error)
   (while (array4-in-range ids)
     (set id (array4-get ids))
-    (if (get-checksum (array4-get-at paths id) page-count page-size &checksum)
+    (if (get-checksum (array4-get-at paths id) &checksum)
       (error "could not calculate checksum for %s" (array4-get-at paths id)))
     (set checksum-id (id-by-checksum-get id-by-checksum checksum))
     (if checksum-id
@@ -306,11 +292,10 @@
   (while (array4-in-range ids)
     (set id (array4-get ids) path (array4-get-at paths id) name (simple-basename path))
     (if (or ignore-filenames (strcmp first-name name))
-      (begin
-        (if (not (or (file-open path &file) (file-to-mmap file size &content)))
-          (begin
-            (if (not (memcmp first-content content size)) (array4-add duplicates id))
-            (munmap content size))))
+      (if (not (or (file-open path &file) (file-to-mmap file size &content)))
+        (begin
+          (if (not (memcmp first-content content size)) (array4-add duplicates id))
+          (munmap content size)))
       (array4-add duplicates id))
     (array4-forward ids))
   (munmap first-content size)
@@ -334,22 +319,18 @@
     ids-by-size ids-by-size-t
     ids ids-t
     options uint8-t
-    page-size size-t
     cluster-count id-t
     paths paths-t)
   (set options (cli argc argv))
   (if (bit-and flag-exit options) (exit 0))
   (set
-    page-size 4096
     delimiter (if* (bit-and options flag-null-delimiter) #\0 #\newline)
     paths (get-input-paths)
     ids-by-size (get-duplicated-ids-by-size paths)
     cluster-count 0)
   (for ((define i size-t 0) (< i ids-by-size.size) (set+ i 1))
     (if (not (array-get ids-by-size.flags i)) continue)
-    (set
-      ids (array-get ids-by-size.values i)
-      ids-by-checksum (get-ids-by-checksum paths ids checksum-page-count page-size))
+    (set ids (array-get ids-by-size.values i) ids-by-checksum (get-ids-by-checksum paths ids))
     (array4-free ids)
     (for ((define j size-t 0) (< j ids-by-checksum.size) (set+ j 1))
       (if (not (array-get ids-by-checksum.flags j)) continue)

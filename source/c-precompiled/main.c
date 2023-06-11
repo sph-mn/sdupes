@@ -20,7 +20,7 @@
 #include <foreign/sph-sc-lib/quicksort.h>
 
 #define input_path_allocate_min 1024
-#define checksum_page_count 4
+#define checksum_portion_size 16384
 #define flag_display_clusters 1
 #define flag_null_delimiter 2
 #define flag_exit 4
@@ -30,8 +30,8 @@
 #define memory_error \
   error("%s", "memory allocation failed"); \
   exit(1);
-#define checksum_hash(key, size) (key.a % size)
-#define checksum_equal(key_a, key_b) ((key_a.a == key_b.a) && (key_a.b == key_b.b))
+#define checksum_hash(key, size) ((key.data)[1] % size)
+#define checksum_equal(key_a, key_b) !memcmp((key_a.data), (key_b.data), 48)
 #define device_and_inode_hash(key, size) (key.inode % size)
 #define device_and_inode_equal(key_a, key_b) ((key_a.inode == key_b.inode) && (key_a.device == key_b.device))
 #define ids_add_with_resize(a, id) \
@@ -41,8 +41,7 @@
     array4_add(a, id); \
   }
 typedef struct {
-  uint64_t a;
-  uint64_t b;
+  uint64_t data[6];
 } checksum_t;
 typedef size_t id_t;
 typedef struct {
@@ -144,7 +143,7 @@ void display_help() {
   printf(("  read file paths from standard input and display paths of excess duplicate files sorted by modification time ascending.\n"));
   printf(("  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n"));
   printf("  * size\n");
-  printf("  * murmur3 hash of a center portion\n");
+  printf("  * murmur3 hashes of start, middle, and end portions\n");
   printf("  * name or content\n");
   printf("options\n");
   printf("  --help, -h  display this help text\n");
@@ -156,9 +155,9 @@ void display_help() {
 uint8_t cli(int argc, char** argv) {
   int opt;
   uint8_t options;
-  struct option longopts[6] = { { "help", no_argument, 0, 'h' }, { "cluster", no_argument, 0, 'c' }, { "null", no_argument, 0, '0' }, { "sort-reverse", no_argument, 0, 's' }, { "ignore-filenames", no_argument, 0, 'b' }, { 0, 0, 0, 0 } };
+  struct option longopts[6] = { { "help", no_argument, 0, 'h' }, { "cluster", no_argument, 0, 'c' }, { "null", no_argument, 0, '0' }, { "sort-reverse", no_argument, 0, 's' }, { "ignore-filenames", no_argument, 0, 'b' }, { 0 } };
   options = 0;
-  while (!(-1 == (opt = getopt_long(argc, argv, "chns", longopts, 0)))) {
+  while (!(-1 == (opt = getopt_long(argc, argv, "ch0sb", longopts, 0)))) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
@@ -265,59 +264,40 @@ ids_by_size_t get_duplicated_ids_by_size(paths_t paths) {
   device_and_inode_set_free(device_and_inode_set);
   return (ids_by_size);
 }
-
-/** center-page-count and page-size are optional and can be zero.
-   if center-page-count is not zero, only a centered portion of the file is checksummed.
-   in this case page-size must also be non-zero */
-uint8_t get_checksum(uint8_t* path, size_t center_page_count, size_t page_size, checksum_t* result) {
+uint8_t get_checksum(uint8_t* path, checksum_t* out) {
+  uint8_t* buffer;
   int file;
-  uint8_t* mmap_buffer;
   struct stat stat_info;
-  uint64_t checksum[2];
-  size_t portion_start;
-  size_t portion_length;
-  if (file_open(path, (&file))) {
+  checksum_t null = { 0 };
+  file = 0;
+  *out = null;
+  if (file_open(path, (&file)) || file_stat(file, path, (&stat_info))) {
     return (1);
   };
-  if (file_stat(file, path, (&stat_info))) {
-    close(file);
-    return (1);
-  };
-  if (stat_info.st_size) {
-    if (center_page_count && (stat_info.st_size > (2 * page_size * center_page_count))) {
-      portion_start = (stat_info.st_size / page_size);
-      portion_start = ((3 > portion_start) ? page_size : (page_size * (portion_start / 2)));
-      portion_length = (page_size * center_page_count);
-      if (portion_length > stat_info.st_size) {
-        portion_length = (stat_info.st_size - portion_start);
-      };
-    } else {
-      portion_start = 0;
-      portion_length = stat_info.st_size;
-    };
-  } else {
-    result->a = 0;
-    result->b = 0;
-    close(file);
+  if (!stat_info.st_size) {
     return (0);
   };
-  mmap_buffer = mmap(0, portion_length, PROT_READ, MAP_SHARED, file, portion_start);
-  close(file);
-  if (MAP_FAILED == mmap_buffer) {
+  buffer = mmap(0, (stat_info.st_size), PROT_READ, MAP_SHARED, file, 0);
+  if (MAP_FAILED == buffer) {
     error("%s", (strerror(errno)));
     return (1);
   };
-  MurmurHash3_x64_128(mmap_buffer, portion_length, 0, checksum);
-  munmap(mmap_buffer, portion_length);
-  result->a = checksum[0];
-  result->b = checksum[1];
+  close(file);
+  if (stat_info.st_size < (2 * 3 * checksum_portion_size)) {
+    MurmurHash3_x64_128(buffer, (stat_info.st_size), 0, (out->data));
+  } else {
+    MurmurHash3_x64_128(buffer, checksum_portion_size, 0, (out->data));
+    MurmurHash3_x64_128((((stat_info.st_size / 2) - (checksum_portion_size / 2)) + buffer), checksum_portion_size, 0, (2 + out->data));
+    MurmurHash3_x64_128(((stat_info.st_size - checksum_portion_size) + buffer), checksum_portion_size, 0, (4 + out->data));
+  };
+  munmap(buffer, (stat_info.st_size));
   return (0);
 }
 
 /** assumes that all ids are of regular files */
-ids_by_checksum_t get_ids_by_checksum(paths_t paths, ids_t ids, size_t page_count, size_t page_size) {
-  checksum_t checksum;
+ids_by_checksum_t get_ids_by_checksum(paths_t paths, ids_t ids) {
   id_t id;
+  checksum_t checksum;
   id_t* checksum_id;
   ids_t* checksum_ids;
   ids_t new_checksum_ids;
@@ -328,7 +308,7 @@ ids_by_checksum_t get_ids_by_checksum(paths_t paths, ids_t ids, size_t page_coun
   };
   while (array4_in_range(ids)) {
     id = array4_get(ids);
-    if (get_checksum((array4_get_at(paths, id)), page_count, page_size, (&checksum))) {
+    if (get_checksum((array4_get_at(paths, id)), (&checksum))) {
       error("could not calculate checksum for %s", (array4_get_at(paths, id)));
     };
     checksum_id = id_by_checksum_get(id_by_checksum, checksum);
@@ -429,14 +409,12 @@ int main(int argc, char** argv) {
   ids_by_size_t ids_by_size;
   ids_t ids;
   uint8_t options;
-  size_t page_size;
   id_t cluster_count;
   paths_t paths;
   options = cli(argc, argv);
   if (flag_exit & options) {
     exit(0);
   };
-  page_size = 4096;
   delimiter = ((options & flag_null_delimiter) ? '0' : '\n');
   paths = get_input_paths();
   ids_by_size = get_duplicated_ids_by_size(paths);
@@ -446,7 +424,7 @@ int main(int argc, char** argv) {
       continue;
     };
     ids = (ids_by_size.values)[i];
-    ids_by_checksum = get_ids_by_checksum(paths, ids, checksum_page_count, page_size);
+    ids_by_checksum = get_ids_by_checksum(paths, ids);
     array4_free(ids);
     for (size_t j = 0; (j < ids_by_checksum.size); j += 1) {
       if (!(ids_by_checksum.flags)[j]) {
