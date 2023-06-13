@@ -70,6 +70,14 @@ quick tests using bash "time" comparing sdupes to other popular common duplicate
 * app2: 0m57.232s
 * app3: 2m41.197s
 
+# tests
+* exe/md5comparison-run compares the md5 sums of duplicates to check for false positives
+* exe/valgrind-run checks for memory leaks
+
+# possible enhancements
+* allow usage as a library
+* --version option
+
 # similar projects
 * [rmlint](https://github.com/sahib/rmlint)
 * [fdupes](https://github.com/adrianlopezroche/fdupes)

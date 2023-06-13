@@ -1,0 +1,14 @@
+#!/usr/bin/ruby
+
+# this script is used like sdupes and prints found duplicates with unequal md5sums.
+# depends on ruby and the md5sum command-line utility.
+
+clusters = %x{sdupes -c}.split "\n\n"
+clusters.each {|cluster|
+  paths = cluster.split "\n"
+  md5sums = paths.map {|path| %x{md5sum "#{path}"}.split(" ").first}
+  next if 1 == md5sums.uniq.size
+  paths.each_with_index {|path, index|
+    puts "false positive: #{md5sums[index]} #{path}"
+  }
+}

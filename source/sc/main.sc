@@ -29,7 +29,9 @@
   (ids-add-with-resize a id)
   (if (and (= (array4-size a) (array4-max-size a)) (ids-resize &a (* 2 (array4-max-size a))))
     memory-error
-    (array4-add a id)))
+    (array4-add a id))
+  (array4-free-elements a free)
+  (begin (array4-rewind a) (while (array4-in-range a) (free (array4-get a)) (array4-forward a))))
 
 (declare
   checksum-t (type (struct (data (array uint64-t 6))))
@@ -72,9 +74,8 @@
   (set *out stat-info.st-size)
   (return 0))
 
-(define (file-to-mmap file size out) (uint8-t int off-t uint8-t**)
+(define (file-mmap file size out) (uint8-t int off-t uint8-t**)
   (set *out (mmap 0 size PROT-READ MAP-SHARED file 0))
-  (close file)
   (if (= MAP-FAILED *out) (begin (error "%s" (strerror errno)) (return 1)))
   (return 0))
 
@@ -98,10 +99,10 @@
 (define (sort-ids-by-ctime ids paths sort-descending) (uint8-t ids-t paths-t uint8-t)
   "sort ids in-place via temporary array of pairs of id and ctime"
   (declare
-    file int
-    id-count size-t
     id id-t
+    id-count size-t
     ids-time id-time-t*
+    file int
     path uint8-t*
     stat-info (struct stat))
   (set id-count (array4-size ids) ids-time (malloc (* id-count (sizeof id-time-t))))
@@ -158,15 +159,15 @@
 
 (define (get-input-paths) paths-t
   "read newline separated paths from standard input and return in paths_t array"
-  (declare result paths-t line char* line-copy char* line-size size-t char-count ssize-t)
+  (declare paths paths-t line char* line-copy char* line-size size-t char-count ssize-t)
   (set line 0 line-size 0)
-  (if (paths-new input-path-allocate-min &result) memory-error)
+  (if (paths-new input-path-allocate-min &paths) memory-error)
   (set char-count (getline &line &line-size stdin))
   (while (not (= -1 char-count))
     (if (not line-size) continue)
     (if
-      (and (> (array4-size result) (array4-max-size result))
-        (paths-resize &result (* 2 (array4-max-size result))))
+      (and (> (array4-size paths) (array4-max-size paths))
+        (paths-resize &paths (* 2 (array4-max-size paths))))
       memory-error)
     (sc-comment "getline always returns the delimiter if not end of input")
     (if (and char-count (= #\newline (array-get line (- char-count 1))))
@@ -174,11 +175,11 @@
     (set line-copy (malloc line-size))
     (if (not line-copy) memory-error)
     (memcpy line-copy line line-size)
-    (array4-add result line-copy)
+    (array4-add paths line-copy)
     (set char-count (getline &line &line-size stdin)))
   (if (= ENOMEM errno) memory-error)
   (free line)
-  (return result))
+  (return paths))
 
 (define (get-duplicated-ids-by-size paths) (ids-by-size-t paths-t)
   "the result will only contain ids of regular files (no directories, symlinks, etc)"
@@ -198,7 +199,7 @@
     memory-error)
   (for ((define i id-t 0) (< i (array4-size paths)) (set+ i 1))
     (if (lstat (array4-get-at paths i) &stat-info)
-      (begin (error "could not lstat %s %s\n" (strerror errno) (array4-get-at paths i)) continue))
+      (begin (error "could not lstat %s %s" (strerror errno) (array4-get-at paths i)) continue))
     (if (not (S-ISREG stat-info.st_mode)) continue)
     (struct-set device-and-inode device stat-info.st-dev inode stat-info.st-ino)
     (if (device-and-inode-set-get device-and-inode-set device-and-inode) continue
@@ -218,12 +219,13 @@
 (define (get-checksum path out) (uint8-t uint8-t* checksum-t*)
   (declare buffer uint8-t* file int stat-info (struct stat))
   (define null checksum-t (struct-literal 0))
-  (set file 0 *out null)
-  (if (or (file-open path &file) (file-stat file path &stat-info)) (return 1))
-  (if (not stat-info.st-size) (return 0))
+  (set *out null)
+  (if (file-open path &file) (return 1))
+  (if (file-stat file path &stat-info) (begin (close file) (return 1)))
+  (if (not stat-info.st-size) (begin (close file) (return 0)))
   (set buffer (mmap 0 stat-info.st-size PROT-READ MAP-SHARED file 0))
-  (if (= MAP-FAILED buffer) (begin (error "%s" (strerror errno)) (return 1)))
   (close file)
+  (if (= MAP-FAILED buffer) (begin (error "%s" (strerror errno)) (return 1)))
   (if (< stat-info.st-size (* 2 3 checksum-portion-size))
     (MurmurHash3_x64_128 buffer stat-info.st-size 0 out:data)
     (begin
@@ -238,13 +240,13 @@
 (define (get-ids-by-checksum paths ids) (ids-by-checksum-t paths-t ids-t)
   "assumes that all ids are of regular files"
   (declare
-    id id-t
     checksum checksum-t
     checksum-id id-t*
     checksum-ids ids-t*
-    new-checksum-ids ids-t
+    id id-t
     id-by-checksum id-by-checksum-t
-    ids-by-checksum ids-by-checksum-t)
+    ids-by-checksum ids-by-checksum-t
+    new-checksum-ids ids-t)
   (if
     (or (id-by-checksum-new (array4-size ids) &id-by-checksum)
       (ids-by-checksum-new (array4-size ids) &ids-by-checksum))
@@ -271,30 +273,34 @@
 (define (get-duplicates paths ids ignore-filenames) (ids-t paths-t ids-t uint8-t)
   "return ids whose file name or file content is equal"
   (declare
-    first-content uint8-t*
-    path uint8-t*
-    name uint8-t*
-    first-name uint8-t*
-    size off-t
-    id id-t
+    content uint8-t*
     file int
-    content uint8-t*)
+    first-content uint8-t*
+    first-name uint8-t*
+    id id-t
+    name uint8-t*
+    path uint8-t*
+    size off-t)
   (array4-declare duplicates ids-t)
   (if (not (array4-in-range ids)) (return duplicates))
   (set id (array4-get ids) path (array4-get-at paths id) first-name (simple-basename path))
-  (if (or (file-open path &file) (file-size file path &size)) (return duplicates))
-  (if (not size) (return ids))
-  (file-to-mmap file size &first-content)
+  (if (file-open path &file) (return duplicates))
+  (if (file-size file path &size) (begin (close file) (return duplicates)))
+  (if (not size) (begin (close file) (return ids)))
+  (if (file-mmap file size &first-content) (begin (close file) (return duplicates)))
+  (close file)
   (if (ids-new (array4-size ids) &duplicates) memory-error)
   (array4-add duplicates id)
   (array4-forward ids)
   (while (array4-in-range ids)
     (set id (array4-get ids) path (array4-get-at paths id) name (simple-basename path))
     (if (or ignore-filenames (strcmp first-name name))
-      (if (not (or (file-open path &file) (file-to-mmap file size &content)))
-        (begin
-          (if (not (memcmp first-content content size)) (array4-add duplicates id))
-          (munmap content size)))
+      (begin
+        (if (file-open path &file) continue)
+        (if (file-mmap file size &content) (begin (close file) continue))
+        (close file)
+        (if (not (memcmp first-content content size)) (array4-add duplicates id))
+        (munmap content size))
       (array4-add duplicates id))
     (array4-forward ids))
   (munmap first-content size)
@@ -346,4 +352,6 @@
       (array4-free duplicates))
     (ids-by-checksum-free ids-by-checksum))
   (ids-by-size-free ids-by-size)
+  (array4-free-elements paths free)
+  (array4-free paths)
   (return 0))

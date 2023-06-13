@@ -38,6 +38,12 @@
   } else { \
     array4_add(a, id); \
   }
+#define array4_free_elements(a, free) \
+  array4_rewind(a); \
+  while (array4_in_range(a)) { \
+    free((array4_get(a))); \
+    array4_forward(a); \
+  }
 typedef struct {
   uint64_t data[6];
 } checksum_t;
@@ -85,9 +91,8 @@ uint8_t file_size(int file, uint8_t* path, off_t* out) {
   *out = stat_info.st_size;
   return (0);
 }
-uint8_t file_to_mmap(int file, off_t size, uint8_t** out) {
+uint8_t file_mmap(int file, off_t size, uint8_t** out) {
   *out = mmap(0, size, PROT_READ, MAP_SHARED, file, 0);
-  close(file);
   if (MAP_FAILED == *out) {
     error("%s", (strerror(errno)));
     return (1);
@@ -105,10 +110,10 @@ void id_time_swapper(void* a, ssize_t b, ssize_t c) {
 
 /** sort ids in-place via temporary array of pairs of id and ctime */
 uint8_t sort_ids_by_ctime(ids_t ids, paths_t paths, uint8_t sort_descending) {
-  int file;
-  size_t id_count;
   id_t id;
+  size_t id_count;
   id_time_t* ids_time;
+  int file;
   uint8_t* path;
   struct stat stat_info;
   id_count = array4_size(ids);
@@ -175,14 +180,14 @@ uint8_t cli(int argc, char** argv) {
 
 /** read newline separated paths from standard input and return in paths_t array */
 paths_t get_input_paths() {
-  paths_t result;
+  paths_t paths;
   char* line;
   char* line_copy;
   size_t line_size;
   ssize_t char_count;
   line = 0;
   line_size = 0;
-  if (paths_new(input_path_allocate_min, (&result))) {
+  if (paths_new(input_path_allocate_min, (&paths))) {
     memory_error;
   };
   char_count = getline((&line), (&line_size), stdin);
@@ -190,7 +195,7 @@ paths_t get_input_paths() {
     if (!line_size) {
       continue;
     };
-    if ((array4_size(result) > array4_max_size(result)) && paths_resize((&result), (2 * array4_max_size(result)))) {
+    if ((array4_size(paths) > array4_max_size(paths)) && paths_resize((&paths), (2 * array4_max_size(paths)))) {
       memory_error;
     };
     /* getline always returns the delimiter if not end of input */
@@ -203,14 +208,14 @@ paths_t get_input_paths() {
       memory_error;
     };
     memcpy(line_copy, line, line_size);
-    array4_add(result, line_copy);
+    array4_add(paths, line_copy);
     char_count = getline((&line), (&line_size), stdin);
   };
   if (ENOMEM == errno) {
     memory_error;
   };
   free(line);
-  return (result);
+  return (paths);
 }
 
 /** the result will only contain ids of regular files (no directories, symlinks, etc) */
@@ -228,7 +233,7 @@ ids_by_size_t get_duplicated_ids_by_size(paths_t paths) {
   };
   for (id_t i = 0; (i < array4_size(paths)); i += 1) {
     if (lstat((array4_get_at(paths, i)), (&stat_info))) {
-      error("could not lstat %s %s\n", (strerror(errno)), (array4_get_at(paths, i)));
+      error("could not lstat %s %s", (strerror(errno)), (array4_get_at(paths, i)));
       continue;
     };
     if (!S_ISREG((stat_info.st_mode))) {
@@ -267,20 +272,24 @@ uint8_t get_checksum(uint8_t* path, checksum_t* out) {
   int file;
   struct stat stat_info;
   checksum_t null = { 0 };
-  file = 0;
   *out = null;
-  if (file_open(path, (&file)) || file_stat(file, path, (&stat_info))) {
+  if (file_open(path, (&file))) {
+    return (1);
+  };
+  if (file_stat(file, path, (&stat_info))) {
+    close(file);
     return (1);
   };
   if (!stat_info.st_size) {
+    close(file);
     return (0);
   };
   buffer = mmap(0, (stat_info.st_size), PROT_READ, MAP_SHARED, file, 0);
+  close(file);
   if (MAP_FAILED == buffer) {
     error("%s", (strerror(errno)));
     return (1);
   };
-  close(file);
   if (stat_info.st_size < (2 * 3 * checksum_portion_size)) {
     MurmurHash3_x64_128(buffer, (stat_info.st_size), 0, (out->data));
   } else {
@@ -294,13 +303,13 @@ uint8_t get_checksum(uint8_t* path, checksum_t* out) {
 
 /** assumes that all ids are of regular files */
 ids_by_checksum_t get_ids_by_checksum(paths_t paths, ids_t ids) {
-  id_t id;
   checksum_t checksum;
   id_t* checksum_id;
   ids_t* checksum_ids;
-  ids_t new_checksum_ids;
+  id_t id;
   id_by_checksum_t id_by_checksum;
   ids_by_checksum_t ids_by_checksum;
+  ids_t new_checksum_ids;
   if (id_by_checksum_new((array4_size(ids)), (&id_by_checksum)) || ids_by_checksum_new((array4_size(ids)), (&ids_by_checksum))) {
     memory_error;
   };
@@ -333,14 +342,14 @@ ids_by_checksum_t get_ids_by_checksum(paths_t paths, ids_t ids) {
 
 /** return ids whose file name or file content is equal */
 ids_t get_duplicates(paths_t paths, ids_t ids, uint8_t ignore_filenames) {
-  uint8_t* first_content;
-  uint8_t* path;
-  uint8_t* name;
-  uint8_t* first_name;
-  off_t size;
-  id_t id;
-  int file;
   uint8_t* content;
+  int file;
+  uint8_t* first_content;
+  uint8_t* first_name;
+  id_t id;
+  uint8_t* name;
+  uint8_t* path;
+  off_t size;
   array4_declare(duplicates, ids_t);
   if (!array4_in_range(ids)) {
     return (duplicates);
@@ -348,13 +357,22 @@ ids_t get_duplicates(paths_t paths, ids_t ids, uint8_t ignore_filenames) {
   id = array4_get(ids);
   path = array4_get_at(paths, id);
   first_name = simple_basename(path);
-  if (file_open(path, (&file)) || file_size(file, path, (&size))) {
+  if (file_open(path, (&file))) {
+    return (duplicates);
+  };
+  if (file_size(file, path, (&size))) {
+    close(file);
     return (duplicates);
   };
   if (!size) {
+    close(file);
     return (ids);
   };
-  file_to_mmap(file, size, (&first_content));
+  if (file_mmap(file, size, (&first_content))) {
+    close(file);
+    return (duplicates);
+  };
+  close(file);
   if (ids_new((array4_size(ids)), (&duplicates))) {
     memory_error;
   };
@@ -365,12 +383,18 @@ ids_t get_duplicates(paths_t paths, ids_t ids, uint8_t ignore_filenames) {
     path = array4_get_at(paths, id);
     name = simple_basename(path);
     if (ignore_filenames || strcmp(first_name, name)) {
-      if (!(file_open(path, (&file)) || file_to_mmap(file, size, (&content)))) {
-        if (!memcmp(first_content, content, size)) {
-          array4_add(duplicates, id);
-        };
-        munmap(content, size);
+      if (file_open(path, (&file))) {
+        continue;
       };
+      if (file_mmap(file, size, (&content))) {
+        close(file);
+        continue;
+      };
+      close(file);
+      if (!memcmp(first_content, content, size)) {
+        array4_add(duplicates, id);
+      };
+      munmap(content, size);
     } else {
       array4_add(duplicates, id);
     };
@@ -442,5 +466,7 @@ int main(int argc, char** argv) {
     ids_by_checksum_free(ids_by_checksum);
   };
   ids_by_size_free(ids_by_size);
+  array4_free_elements(paths, free);
+  array4_free(paths);
   return (0);
 }
