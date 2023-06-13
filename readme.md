@@ -71,8 +71,8 @@ quick tests using bash "time" comparing sdupes to other popular common duplicate
 * app3: 2m41.197s
 
 # tests
-* exe/md5comparison-run compares the md5 sums of duplicates to check for false positives
 * exe/valgrind-run checks for memory leaks
+* exe/md5comparison-run compares the md5 sums of duplicates
 
 # possible enhancements
 * allow usage as a library
