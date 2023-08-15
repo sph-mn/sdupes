@@ -22,7 +22,7 @@
 #define flag_display_clusters 1
 #define flag_null_delimiter 2
 #define flag_exit 4
-#define flag_sort_reverse 8
+#define flag_reverse 8
 #define flag_ignore_filenames 16
 #define error(format, ...) fprintf(stderr, "error: %s:%d " format "\n", __func__, __LINE__, __VA_ARGS__)
 #define memory_error \
@@ -153,14 +153,14 @@ void display_help() {
   printf(("  --cluster, -c  display all duplicate paths. two newlines between sets\n"));
   printf("  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n");
   printf(("  --null, -0  use a null byte to delimit paths. two null bytes between sets\n"));
-  printf("  --sort-reverse, -s  sort clusters by creation time descending\n");
+  printf("  --reverse, -r  sort clusters by creation time descending\n");
 }
 uint8_t cli(int argc, char** argv) {
   int opt;
   uint8_t options;
-  struct option longopts[6] = { { "help", no_argument, 0, 'h' }, { "cluster", no_argument, 0, 'c' }, { "null", no_argument, 0, '0' }, { "sort-reverse", no_argument, 0, 's' }, { "ignore-filenames", no_argument, 0, 'b' }, { 0 } };
+  struct option longopts[6] = { { "help", no_argument, 0, 'h' }, { "cluster", no_argument, 0, 'c' }, { "null", no_argument, 0, '0' }, { "reverse", no_argument, 0, 's' }, { "ignore-filenames", no_argument, 0, 'b' }, { 0 } };
   options = 0;
-  while (!(-1 == (opt = getopt_long(argc, argv, "ch0sb", longopts, 0)))) {
+  while (!(-1 == (opt = getopt_long(argc, argv, "ch0rb", longopts, 0)))) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
@@ -169,8 +169,8 @@ uint8_t cli(int argc, char** argv) {
       options = (flag_display_clusters | options);
     } else if ('0' == opt) {
       options = (flag_null_delimiter | options);
-    } else if ('s' == opt) {
-      options = (flag_sort_reverse | options);
+    } else if ('r' == opt) {
+      options = (flag_reverse | options);
     } else if ('b' == opt) {
       options = (flag_ignore_filenames | options);
     };
@@ -408,8 +408,8 @@ ids_t get_duplicates(paths_t paths, ids_t ids, uint8_t ignore_filenames) {
 }
 
 /** assumes that ids contains at least two entries */
-void display_duplicates(paths_t paths, ids_t ids, uint8_t delimiter, id_t cluster_count, uint8_t display_cluster, uint8_t sort_reverse) {
-  if (sort_ids_by_ctime(ids, paths, sort_reverse)) {
+void display_duplicates(paths_t paths, ids_t ids, uint8_t delimiter, id_t cluster_count, uint8_t display_cluster, uint8_t reverse) {
+  if (sort_ids_by_ctime(ids, paths, reverse)) {
     return;
   };
   if (display_cluster) {
@@ -458,7 +458,7 @@ int main(int argc, char** argv) {
         array4_free(ids);
       };
       if (1 < array4_size(duplicates)) {
-        display_duplicates(paths, duplicates, delimiter, cluster_count, (options & flag_display_clusters), (options & flag_sort_reverse));
+        display_duplicates(paths, duplicates, delimiter, cluster_count, (options & flag_display_clusters), (options & flag_reverse));
         cluster_count += 1;
       };
       array4_free(duplicates);

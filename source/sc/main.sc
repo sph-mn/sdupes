@@ -16,7 +16,7 @@
   flag-display-clusters 1
   flag-null-delimiter 2
   flag-exit 4
-  flag-sort-reverse 8
+  flag-reverse 8
   flag-ignore-filenames 16
   (error format ...)
   (fprintf stderr (pre-string-concat "error: %s:%d " format "\n") __func__ __LINE__ __VA-ARGS__)
@@ -136,7 +136,7 @@
   (printf
     "  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n")
   (printf "  --null, -0  use a null byte to delimit paths. two null bytes between sets\n")
-  (printf "  --sort-reverse, -s  sort clusters by creation time descending\n"))
+  (printf "  --reverse, -r  sort clusters by creation time descending\n"))
 
 (define (cli argc argv) (uint8-t int char**)
   (declare
@@ -145,15 +145,15 @@
     longopts
     (array (struct option) 6
       (struct-literal "help" no-argument 0 #\h) (struct-literal "cluster" no-argument 0 #\c)
-      (struct-literal "null" no-argument 0 #\0) (struct-literal "sort-reverse" no-argument 0 #\s)
+      (struct-literal "null" no-argument 0 #\0) (struct-literal "reverse" no-argument 0 #\s)
       (struct-literal "ignore-filenames" no-argument 0 #\b) (struct-literal 0)))
   (set options 0)
-  (while (not (= -1 (set opt (getopt-long argc argv "ch0sb" longopts 0))))
+  (while (not (= -1 (set opt (getopt-long argc argv "ch0rb" longopts 0))))
     (case = opt
       (#\h (display-help) (set options (bit-or flag-exit options)) break)
       (#\c (set options (bit-or flag-display-clusters options)))
       (#\0 (set options (bit-or flag-null-delimiter options)))
-      (#\s (set options (bit-or flag-sort-reverse options)))
+      (#\r (set options (bit-or flag-reverse options)))
       (#\b (set options (bit-or flag-ignore-filenames options)))))
   (return options))
 
@@ -307,10 +307,10 @@
   (if (= 1 (array4-size duplicates)) (array4-remove duplicates))
   (return duplicates))
 
-(define (display-duplicates paths ids delimiter cluster-count display-cluster sort-reverse)
+(define (display-duplicates paths ids delimiter cluster-count display-cluster reverse)
   (void paths-t ids-t uint8-t id-t uint8-t uint8-t)
   "assumes that ids contains at least two entries"
-  (if (sort-ids-by-ctime ids paths sort-reverse) return)
+  (if (sort-ids-by-ctime ids paths reverse) return)
   (if display-cluster (if cluster-count (putchar delimiter)) (array4-forward ids))
   (do-while (array4-in-range ids)
     (printf "%s%c" (array4-get-at paths (array4-get ids)) delimiter)
@@ -347,7 +347,7 @@
         (begin
           (display-duplicates paths duplicates
             delimiter cluster-count (bit-and options flag-display-clusters)
-            (bit-and options flag-sort-reverse))
+            (bit-and options flag-reverse))
           (set+ cluster-count 1)))
       (array4-free duplicates))
     (ids-by-checksum-free ids-by-checksum))
