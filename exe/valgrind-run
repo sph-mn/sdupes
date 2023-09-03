@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# run ./temp/sdupes and check for memory leaks with valgrind
+# run sdupes and check for memory leaks with valgrind
 
 options="--leak-check=full --show-leak-kinds=all --track-origins=yes"
-valgrind --tool=memcheck $options ./temp/sdupes "$@"
+valgrind --tool=memcheck $options ./exe/sdupes "$@"

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 sph_sc_root="$1"
-destination="$PWD/source/c/foreign/sph-sc-lib"
+destination="$PWD/src/foreign/sph-sc-lib"
 source="$sph_sc_root/source/c-precompiled/sph"
 
 if test -d "$destination"
@@ -12,4 +12,4 @@ else
 fi
 
 cd "$source"
-cp -t "$destination" quicksort.h hashtable.h array4.h set.h
+cp quicksort.h hashtable.h array4.h set.h "$destination"

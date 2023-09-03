@@ -1,3 +1,6 @@
 #!/bin/sh
 
-./exe/compile-sc && ./exe/compile-c
+if command -v musl-gcc > /dev/null; then compiler=musl-gcc; else compiler=gcc; fi
+compiler_options="-Wunused-label -Wunused-value -Wunused-variable -Wfatal-errors -std=c11 -O3 -static -I src"
+$compiler $compiler_options src/main.c -o exe/sdupes
+chmod +x exe/sdupes
