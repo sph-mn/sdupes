@@ -12,7 +12,6 @@ this lists excess duplicate files. the oldest file of each set is always left ou
 if no duplicates are found, nothing is displayed.
 
 ## remove duplicates
-
 sdupes can be used with xargs to remove duplicate files:
 ~~~
 find | sdupes | xargs -n 1 -d \\n rm
@@ -36,21 +35,19 @@ options
 ~~~
 
 # dependencies
-* c 2011 standard library (for example glibc)
+* c 2011 standard library (for example musl-libc or glibc)
 * posix 2008 features (for example linux or freebsd)
 * for the provided compile script: shell, gcc
-* optional: [sph-sc](https://github.com/sph-mn/sph-sc) and clang-format to edit the code in sc
 
 # installation
 ~~~
-sh ./exe/compile-c
+sh ./exe/compile
 ~~~
-this should create `temp/sdupes` which is the final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
+this should create `exe/sdupes` which is the final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
 
 # technical details
 * all input path names are loaded into memory. in my test, memory usage stayed under 1GB for a 31200 files music library
-* tiny hashtable and array implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
-* written in c, currently via sc which maps scheme-like syntax to readable c. the c code is available under source/c-precompiled
+* tiny hashtable implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
 
 # license
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
