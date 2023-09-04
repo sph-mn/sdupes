@@ -12,4 +12,4 @@ else
 fi
 
 cd "$source"
-cp quicksort.h hashtable.h array4.h set.h "$destination"
+cp hashtable.h array4.h set.h "$destination"

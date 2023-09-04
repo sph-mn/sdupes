@@ -15,7 +15,6 @@
 #include <foreign/sph-sc-lib/hashtable.h>
 #include <foreign/sph-sc-lib/set.h>
 #include <foreign/sph-sc-lib/array4.h>
-#include <foreign/sph-sc-lib/quicksort.h>
 #define paths_size_min 8192
 #define path_size_min 512
 #define paths_data_size_min paths_size_min * path_size_min
@@ -40,13 +39,6 @@
     array4_add(a, id); \
   }
 
-#define array4_free_elements(a, free)           \
-  array4_rewind(a); \
-  while (array4_in_range(a)) { \
-    free((array4_get(a))); \
-    array4_forward(a); \
-  }
-
 typedef struct {uint64_t data[6];} checksum_t;
 typedef size_t id_t;
 typedef struct {id_t id; time_t time;} id_time_t;
@@ -61,83 +53,89 @@ sph_set_declare_type_nonull(device_and_inode_set, device_and_inode_t, device_and
 
 uint8_t* simple_basename(uint8_t* path) {
   uint8_t* slash_pointer = strrchr(path, '/');
-  return ((slash_pointer ? (1 + slash_pointer) : path));
+  return((slash_pointer ? (1 + slash_pointer) : path));
 }
 
 uint8_t file_open(uint8_t* path, int* out) {
   *out = open(path, O_RDONLY);
   if (*out < 0) {
     display_error("could not open %s %s", strerror(errno), path);
-    return (1);
+    return(1);
   };
-  return (0);
+  return(0);
 }
 
 uint8_t file_stat(int file, uint8_t* path, struct stat* out) {
   if (fstat(file, out)) {
     display_error("could not stat %s %s", strerror(errno), path);
-    return (1);
+    return(1);
   };
-  return (0);
+  return(0);
 }
 
 uint8_t file_size(int file, uint8_t* path, off_t* out) {
   struct stat stat_info;
-  if (file_stat(file, path, &stat_info)) {
-    return (1);
-  };
+  if (file_stat(file, path, &stat_info)) return(1);
   *out = stat_info.st_size;
-  return (0);
+  return(0);
 }
 
 uint8_t file_mmap(int file, off_t size, uint8_t** out) {
   *out = mmap(0, size, PROT_READ, MAP_SHARED, file, 0);
   if (MAP_FAILED == *out) {
     perror(0);
-    return (1);
+    return(1);
   };
-  return (0);
+  return(0);
 }
 
-uint8_t id_time_less_p(void* a, ssize_t b, ssize_t c) { return (((((id_time_t*)(a))[b]).time < (((id_time_t*)(a))[c]).time)); }
-uint8_t id_time_greater_p(void* a, ssize_t b, ssize_t c) { return (((((id_time_t*)(a))[b]).time > (((id_time_t*)(a))[c]).time)); }
-
-void id_time_swapper(void* a, ssize_t b, ssize_t c) {
-  id_time_t d;
-  d = ((id_time_t*)(a))[b];
-  ((id_time_t*)(a))[b] = ((id_time_t*)(a))[c];
-  ((id_time_t*)(a))[c] = d;
+static int id_time_less_p(const void* a, const void* b) {
+  return(((id_time_t*)a)->time < ((id_time_t*)b)->time ? -1 : (((id_time_t*)a)->time > ((id_time_t*)b)->time));
 }
+
+static int id_time_greater_p(const void* a, const void* b) {return id_time_less_p(b, a);}
 
 uint8_t sort_ids_by_ctime(ids_t ids, char** paths, uint8_t sort_descending) {
   // sort ids in-place via temporary array of pairs of id and ctime
   id_t id;
-  size_t id_count;
   id_time_t* ids_time;
+  id_time_t id_time;
+  id_time_t id_time_null = {0};
   int file;
   uint8_t* path;
   struct stat stat_info;
-  id_count = array4_size(ids);
-  ids_time = malloc((id_count * sizeof(id_time_t)));
+  ids_time = malloc(array4_size(ids) * sizeof(id_time_t));
   if (!ids_time) memory_error;
-  for (size_t i = 0; (i < id_count); i += 1) {
+  for (size_t i = 0; i < array4_size(ids); i += 1) {
     id = array4_get_at(ids, i);
     path = paths[id];
-    if (file_open(path, &file)) {
-      continue;
-    };
-    if (!file_stat(file, path, &stat_info)) {
-      (ids_time[i]).id = id;
-      (ids_time[i]).time = stat_info.st_ctime;
-    };
+    if (file_open(path, &file)) continue;
+    if (file_stat(file, path, &stat_info)) ids_time[i] = id_time_null;
+    else {
+      ids_time[i].id = id;
+      ids_time[i].time = stat_info.st_ctime;
+    }
     close(file);
   };
-  quicksort((sort_descending ? id_time_greater_p : id_time_less_p), id_time_swapper, ids_time, 0, (id_count - 1));
-  for (size_t i = 0; (i < id_count); i += 1) {
-    array4_get_at(ids, i) = (ids_time[i]).id;
+  if (64 > array4_size(ids)) {
+    for (uint8_t i = 1; i < array4_size(ids); i += 1) {
+      id_time = ids_time[i];
+      int8_t j = i - 1;
+      while (j >= 0 && (sort_descending ? ids_time[j].time < id_time.time : ids_time[j].time > id_time.time)) {
+        ids_time[j + 1] = ids_time[j];
+        j = j - 1;
+      }
+      ids_time[j + 1] = id_time;
+    }
+  }
+  else {
+    qsort(ids_time, array4_size(ids), sizeof(id_time_t), (sort_descending ? id_time_greater_p : id_time_less_p));
+  }
+  for (size_t i = 0; (i < array4_size(ids)); i += 1) {
+    array4_get_at(ids, i) = ids_time[i].id;
   };
   free(ids_time);
-  return (0);
+  return(0);
 }
 
 void display_help() {
@@ -176,7 +174,7 @@ uint8_t cli(int argc, char** argv) {
       options = (flag_ignore_filenames | options);
     };
   };
-  return (options);
+  return(options);
 }
 
 char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
@@ -235,9 +233,7 @@ ids_by_size_t get_duplicated_ids_by_size(char** paths, size_t paths_size) {
       display_error("could not lstat %s %s", strerror(errno), paths[i]);
       continue;
     };
-    if (!S_ISREG((stat_info.st_mode))) {
-      continue;
-    };
+    if (!S_ISREG((stat_info.st_mode))) continue;
     device_and_inode.device = stat_info.st_dev;
     device_and_inode.inode = stat_info.st_ino;
     if (device_and_inode_set_get(device_and_inode_set, device_and_inode)) {
@@ -264,7 +260,7 @@ ids_by_size_t get_duplicated_ids_by_size(char** paths, size_t paths_size) {
   };
   id_by_size_free(id_by_size);
   device_and_inode_set_free(device_and_inode_set);
-  return (ids_by_size);
+  return(ids_by_size);
 }
 
 uint8_t get_checksum(uint8_t* path, checksum_t* out) {
@@ -273,22 +269,20 @@ uint8_t get_checksum(uint8_t* path, checksum_t* out) {
   struct stat stat_info;
   checksum_t null = { 0 };
   *out = null;
-  if (file_open(path, &file)) {
-    return (1);
-  };
+  if (file_open(path, &file)) return(1);
   if (file_stat(file, path, &stat_info)) {
     close(file);
-    return (1);
+    return(1);
   };
   if (!stat_info.st_size) {
     close(file);
-    return (0);
+    return(0);
   };
   buffer = mmap(0, (stat_info.st_size), PROT_READ, MAP_SHARED, file, 0);
   close(file);
   if (MAP_FAILED == buffer) {
     perror(0);
-    return (1);
+    return(1);
   };
   if (stat_info.st_size < (2 * 3 * checksum_portion_size)) {
     MurmurHash3_x64_128(buffer, (stat_info.st_size), 0, (out->data));
@@ -298,7 +292,7 @@ uint8_t get_checksum(uint8_t* path, checksum_t* out) {
     MurmurHash3_x64_128(((stat_info.st_size - checksum_portion_size) + buffer), checksum_portion_size, 0, (4 + out->data));
   };
   munmap(buffer, (stat_info.st_size));
-  return (0);
+  return(0);
 }
 
 ids_by_checksum_t get_ids_by_checksum(char** paths, ids_t ids) {
@@ -337,7 +331,7 @@ ids_by_checksum_t get_ids_by_checksum(char** paths, ids_t ids) {
     array4_forward(ids);
   };
   id_by_checksum_free(id_by_checksum);
-  return (ids_by_checksum);
+  return(ids_by_checksum);
 }
 
 ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames) {
@@ -351,11 +345,11 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames) {
   uint8_t* path;
   off_t size;
   array4_declare(duplicates, ids_t);
-  if (!array4_in_range(ids)) return (duplicates);
+  if (!array4_in_range(ids)) return(duplicates);
   id = array4_get(ids);
   path = paths[id];
   first_name = simple_basename(path);
-  if (file_open(path, &file)) return (duplicates);
+  if (file_open(path, &file)) return(duplicates);
   if (file_size(file, path, &size)) {
     close(file);
     return(duplicates);
@@ -396,12 +390,12 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames) {
   if (1 == array4_size(duplicates)) {
     array4_remove(duplicates);
   };
-  return (duplicates);
+  return(duplicates);
 }
 
 void display_duplicates(char** paths, ids_t ids, uint8_t delimiter, id_t cluster_count, uint8_t display_cluster, uint8_t reverse) {
   // assumes that ids contains at least two entries
-  if (sort_ids_by_ctime(ids, paths, reverse)) return;
+  if (1 < ids.size && sort_ids_by_ctime(ids, paths, reverse)) return;
   if (display_cluster) {
     if (cluster_count) putchar(delimiter);
   } else array4_forward(ids);
@@ -435,9 +429,7 @@ int main(int argc, char** argv) {
     ids_by_checksum = get_ids_by_checksum(paths, ids);
     array4_free(ids);
     for (size_t j = 0; (j < ids_by_checksum.size); j += 1) {
-      if (!(ids_by_checksum.flags)[j]) {
-        continue;
-      };
+      if (!(ids_by_checksum.flags)[j]) continue;
       ids = (ids_by_checksum.values)[j];
       duplicates = get_duplicates(paths, ids, (options & flag_ignore_filenames));
       if (!(duplicates.data == ids.data)) {
