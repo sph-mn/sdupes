@@ -179,10 +179,11 @@ uint8_t cli(int argc, char** argv) {
 
 char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
   // read delimiter separated paths from standard input.
-  size_t data_size = paths_data_size_min;
-  size_t paths_size = paths_size_min;
-  size_t data_used = 0;
   size_t data_index = 0;
+  size_t data_size = paths_data_size_min;
+  size_t data_used = 0;
+  size_t i = 0;
+  size_t paths_size = paths_size_min;
   ssize_t read_size;
   char* data = malloc(paths_data_size_min);
   if (!data) memory_error;
@@ -196,22 +197,23 @@ char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
       data = realloc(data, data_size);
       if (!data) memory_error;
     }
-  }
-  handle_error(read_size);
-  if (!data_used) return 0;
-  for (size_t i = 0; i < data_used; i += 1) {
-    if (delimiter == data[i] && i - data_index) {
-      if (paths_size == *paths_used) {
-        paths_size *= 2;
-        *paths = realloc(*paths, paths_size * sizeof(char*));
-        if (!*paths) memory_error;
+    while (i < data_used) {
+      if (delimiter == data[i] && i > data_index) {
+        if (paths_size == *paths_used) {
+          paths_size *= 2;
+          *paths = realloc(*paths, paths_size * sizeof(char*));
+          if (!*paths) memory_error;
+        }
+        data[i] = 0;
+        (*paths)[*paths_used] = data + data_index;
+        data_index = i + 1;
+        *paths_used += 1;
       }
-      data[i] = 0;
-      (*paths)[*paths_used] = data + data_index;
-      data_index = i + 1;
-      *paths_used += 1;
+      i += 1;
     }
   }
+  handle_error(read_size);
+  if (!data_used) exit(0);
   return(data);
 }
 
@@ -420,7 +422,6 @@ int main(int argc, char** argv) {
   if (flag_exit & options) return(1);
   delimiter = ((options & flag_null_delimiter) ? 0 : '\n');
   paths_data = get_paths(delimiter, &paths, &paths_size);
-  if (!paths_data) return(0);
   ids_by_size = get_duplicated_ids_by_size(paths, paths_size);
   cluster_count = 0;
   for (size_t i = 0; (i < ids_by_size.size); i += 1) {
@@ -444,6 +445,7 @@ int main(int argc, char** argv) {
     ids_by_checksum_free(ids_by_checksum);
   };
   ids_by_size_free(ids_by_size);
-  if (paths_data) free(paths_data);
+  free(paths_data);
+  free(paths);
   return(0);
 }

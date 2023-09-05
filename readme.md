@@ -47,7 +47,7 @@ this should create `exe/sdupes` which is the final executable and can be taken a
 
 # technical details
 * all input path names are loaded into memory. in my test, memory usage stayed under 1GB for a 31200 files music library
-* tiny hashtable implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
+* tiny hashtable and set implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
 
 # license
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
@@ -72,8 +72,12 @@ quick tests using bash "time" comparing sdupes to other popular common duplicate
 * exe/md5comparison-run compares the md5 sums of duplicates
 
 # possible enhancements
-* allow usage as a library
+* allow usage as a library by not necessarily exiting the process
+* parallelization. this can increase throughput on ssds and distributed storage
+  * the file size clustering can be split into batches. the per-cluster checksum and byte comparisons are independent
+  * [futures.h](https://github.com/sph-mn/sph-sc-lib/blob/master/source/c-precompiled/sph/futures.h)
 * --version option
+* --size-only option
 
 # similar projects
 * [rmlint](https://github.com/sahib/rmlint)
