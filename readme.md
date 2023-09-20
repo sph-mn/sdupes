@@ -22,16 +22,16 @@ find | sdupes | xargs -n 1 -d \\n rm
 usage: sdupes
 description
   read file paths from standard input and display paths of excess duplicate files sorted by creation time ascending.
-  considers only regular files with differing device id and inode. files are duplicate if all of the following properties match:
+  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:
   * size
   * murmur3 hashes of start, middle, and end portions
   * name or content
 options
   --help, -h  display this help text
-  --cluster, -c  display all duplicate paths. two newlines between sets
+  --cluster, -c  display all paths with duplicates. two newlines between sets
   --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal
   --null, -0  use a null byte to delimit paths. two null bytes between sets
-  --sort-reverse, -s  sort clusters by creation time descending
+  --reverse, -r  sort clusters by creation time descending
 ~~~
 
 # dependencies

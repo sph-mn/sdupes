@@ -1,7 +1,7 @@
 // error handling: message lines on standard error. ignore files and continue if possible but exit on memory errors.
 // ids are indices of the paths array.
 
-#define _POSIX_C_SOURCE 201000
+#define _POSIX_C_SOURCE 200809L
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -148,7 +148,7 @@ void display_help() {
   printf("  * name or content\n");
   printf("options\n");
   printf("  --help, -h  display this help text\n");
-  printf("  --cluster, -c  display all duplicate paths. two newlines between sets\n");
+  printf("  --cluster, -c  display all paths with duplicates. two newlines between sets\n");
   printf("  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n");
   printf("  --null, -0  use a null byte to delimit paths. two null bytes between sets\n");
   printf("  --reverse, -r  sort clusters by creation time descending\n");
