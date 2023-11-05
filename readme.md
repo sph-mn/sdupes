@@ -53,7 +53,7 @@ this should create `exe/sdupes` which is the final executable and can be taken a
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
 
 # performance comparison
-quick tests using bash "time" comparing sdupes to other popular common duplicate finders.
+quick tests using bash "time" comparing sdupes to other popular duplicate finders.
 
 714G in 27697 files with 800M in 11 duplicates:
 * sdupes: 0m0.119s
