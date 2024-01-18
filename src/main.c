@@ -179,10 +179,12 @@ uint8_t cli(int argc, char** argv) {
 
 char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
   // read delimiter separated paths from standard input.
+  // all paths must end with the delimiter.
+  // data will contain the full string read from standard input with newlines replaced by null bytes,
+  // while paths contains pointers to the beginning of each path in data.
   size_t data_index = 0;
   size_t data_size = paths_data_size_min;
   size_t data_used = 0;
-  size_t i = 0;
   size_t paths_size = paths_size_min;
   ssize_t read_size;
   char* data = malloc(paths_data_size_min);
@@ -197,19 +199,18 @@ char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
       data = realloc(data, data_size);
       if (!data) memory_error;
     }
-    while (i < data_used) {
-      if (delimiter == data[i] && i > data_index) {
-        if (paths_size == *paths_used) {
-          paths_size *= 2;
-          *paths = realloc(*paths, paths_size * sizeof(char*));
-          if (!*paths) memory_error;
-        }
-        data[i] = 0;
-        (*paths)[*paths_used] = data + data_index;
-        data_index = i + 1;
-        *paths_used += 1;
+  }
+  for (size_t i = 0; i < data_used; i += 1) {
+    if (delimiter == data[i] && i > data_index) {
+      if (paths_size == *paths_used) {
+        paths_size *= 2;
+        *paths = realloc(*paths, paths_size * sizeof(char*));
+        if (!*paths) memory_error;
       }
-      i += 1;
+      data[i] = 0;
+      (*paths)[*paths_used] = data + data_index;
+      data_index = i + 1;
+      *paths_used += 1;
     }
   }
   handle_error(read_size);
