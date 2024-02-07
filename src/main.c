@@ -152,14 +152,16 @@ void display_help() {
   printf("  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n");
   printf("  --null, -0  use a null byte to delimit paths. two null bytes between sets\n");
   printf("  --reverse, -r  sort clusters by creation time descending\n");
+  printf("  --version, -v  show the running program version number\n");
 }
 
 uint8_t cli(int argc, char** argv) {
   int opt;
   uint8_t options;
-  struct option longopts[6] = {{"help", no_argument, 0, 'h'}, {"cluster", no_argument, 0, 'c'}, {"null", no_argument, 0, '0'}, {"reverse", no_argument, 0, 's'}, {"ignore-filenames", no_argument, 0, 'b'}, {0}};
+  struct option longopts[7] = {{"help", no_argument, 0, 'h'}, {"cluster", no_argument, 0, 'c'}, {"null", no_argument, 0, '0'},
+    {"reverse", no_argument, 0, 's'}, {"ignore-filenames", no_argument, 0, 'b'}, {"version", no_argument, 0, 'v'}, {0}};
   options = 0;
-  while (!(-1 == (opt = getopt_long(argc, argv, "ch0rb", longopts, 0)))) {
+  while (!(-1 == (opt = getopt_long(argc, argv, "ch0rbv", longopts, 0)))) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
@@ -172,6 +174,10 @@ uint8_t cli(int argc, char** argv) {
       options = (flag_reverse | options);
     } else if ('b' == opt) {
       options = (flag_ignore_filenames | options);
+    } if ('v' == opt) {
+      printf("v1.3\n");
+      options = (flag_exit | options);
+      break;
     };
   };
   return(options);

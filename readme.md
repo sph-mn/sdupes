@@ -32,6 +32,7 @@ options
   --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal
   --null, -0  use a null byte to delimit paths. two null bytes between sets
   --reverse, -r  sort clusters by creation time descending
+  --version, -v  show the running program version number
 ~~~
 
 # dependencies
@@ -76,7 +77,6 @@ quick tests using bash "time" comparing sdupes to other popular duplicate finder
 * parallelization. this can increase throughput on ssds and distributed storage
   * the file size clustering can be split into batches. the per-cluster checksum and byte comparisons are independent
   * [futures.h](https://github.com/sph-mn/sph-sc-lib/blob/master/source/c-precompiled/sph/futures.h)
-* --version option
 * --size-only option
 
 # similar projects
