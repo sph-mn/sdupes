@@ -1,0 +1,35 @@
+#!/usr/bin/ruby
+
+require 'fileutils'
+
+if ARGV.length < 2
+  puts "this script can be used to adjust the file names and paths of duplicates."
+  puts "the second duplicate will be moved to the prefix replaced path of the first duplicate unless it already exists."
+  puts "use case: mirrored files that have become moved or renamed on one side."
+  puts "does a dry-run unless the third argumen is the word run"
+  puts "usage: sdupes-rename drop_prefix add_prefix"
+  puts "usage: sdupes-rename drop_prefix add_prefix run"
+  exit
+end
+
+drop_prefix = ARGV[0]
+add_prefix = ARGV[1]
+target_regexp = ARGV[1]
+dry_run = ARGV[2] != "run"
+clusters = $stdin.read.split "\n\n"
+
+clusters.each {|cluster|
+  paths = cluster.split("\n")
+  next unless paths.length > 1
+  target, duplicates = paths.partition {|a| paths.first == a}
+  target = target.first
+  target = target.sub /^#{drop_prefix}/, add_prefix
+  FileUtils.mkdir_p File.dirname(target) unless dry_run
+  unless File.exists? target
+    if dry_run
+      puts duplicates.first + " -> " + target
+    else
+      FileUtils.mv duplicates.first target
+    end
+  end
+}

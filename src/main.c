@@ -24,6 +24,7 @@
 #define flag_exit 4
 #define flag_reverse 8
 #define flag_ignore_filenames 16
+#define flag_ignore_content 32
 #define display_error(format, ...) fprintf(stderr, "error: %s:%d " format "\n", __func__, __LINE__, __VA_ARGS__)
 #define memory_error do{display_error("%s", "memory allocation failed");exit(1);} while (0)
 #define handle_error(a) if (0 > a) do {display_error("%s", strerror(errno));exit(1);} while (0)
@@ -149,7 +150,8 @@ void display_help() {
   printf("options\n");
   printf("  --help, -h  display this help text\n");
   printf("  --cluster, -c  display all paths with duplicates. two newlines between sets\n");
-  printf("  --ignore-filenames, -b  always do a full byte-by-byte comparison, even if size, hashes, and name are equal\n");
+  printf("  --ignore-filenames, -b  do a full byte-by-byte comparison even if size, hashes, and name are equal\n");
+  printf("  --ignore-content, -q  never do a full byte-by-byte comparison\n");
   printf("  --null, -0  use a null byte to delimit paths. two null bytes between sets\n");
   printf("  --reverse, -r  sort clusters by creation time descending\n");
   printf("  --version, -v  show the running program version number\n");
@@ -158,10 +160,10 @@ void display_help() {
 uint8_t cli(int argc, char** argv) {
   int opt;
   uint8_t options;
-  struct option longopts[7] = {{"help", no_argument, 0, 'h'}, {"cluster", no_argument, 0, 'c'}, {"null", no_argument, 0, '0'},
-    {"reverse", no_argument, 0, 's'}, {"ignore-filenames", no_argument, 0, 'b'}, {"version", no_argument, 0, 'v'}, {0}};
+  struct option longopts[8] = {{"help", no_argument, 0, 'h'}, {"cluster", no_argument, 0, 'c'}, {"null", no_argument, 0, '0'},
+    {"reverse", no_argument, 0, 's'}, {"ignore-filenames", no_argument, 0, 'b'}, {"ignore-content", no_argument, 0, 'q'}, {"version", no_argument, 0, 'v'}, {0}};
   options = 0;
-  while (!(-1 == (opt = getopt_long(argc, argv, "ch0rbv", longopts, 0)))) {
+  while (!(-1 == (opt = getopt_long(argc, argv, "ch0rbqv", longopts, 0)))) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
@@ -174,8 +176,10 @@ uint8_t cli(int argc, char** argv) {
       options = (flag_reverse | options);
     } else if ('b' == opt) {
       options = (flag_ignore_filenames | options);
+    } else if ('q' == opt) {
+      options = (flag_ignore_content | options);
     } if ('v' == opt) {
-      printf("v1.3\n");
+      printf("v1.4\n");
       options = (flag_exit | options);
       break;
     };
@@ -343,7 +347,7 @@ ids_by_checksum_t get_ids_by_checksum(char** paths, ids_t ids) {
   return(ids_by_checksum);
 }
 
-ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames) {
+ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames, uint8_t ignore_content) {
   // return ids whose file name or file content is equal
   uint8_t* content;
   int file;
@@ -374,13 +378,12 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames) {
   close(file);
   if (ids_new(array4_size(ids), &duplicates)) memory_error;
   array4_add(duplicates, id);
-  array4_forward(ids);
-  while (array4_in_range(ids)) {
+  for (array4_forward(ids); array4_in_range(ids); array4_forward(ids)) {
     id = array4_get(ids);
     path = paths[id];
     name = simple_basename(path);
-    if (ignore_filenames || strcmp(first_name, name)) {
-      if (file_open(path, &file)) continue;
+    if (ignore_filenames && !ignore_content || strcmp(first_name, name)) {
+      if (ignore_content || file_open(path, &file)) continue;
       if (file_mmap(file, size, &content)) {
         close(file);
         continue;
@@ -393,8 +396,7 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames) {
     } else {
       array4_add(duplicates, id);
     };
-    array4_forward(ids);
-  };
+  }
   munmap(first_content, size);
   if (1 == array4_size(duplicates)) {
     array4_remove(duplicates);
@@ -439,12 +441,12 @@ int main(int argc, char** argv) {
     for (size_t j = 0; (j < ids_by_checksum.size); j += 1) {
       if (!(ids_by_checksum.flags)[j]) continue;
       ids = (ids_by_checksum.values)[j];
-      duplicates = get_duplicates(paths, ids, (options & flag_ignore_filenames));
+      duplicates = get_duplicates(paths, ids, options & flag_ignore_filenames, options & flag_ignore_content);
       if (!(duplicates.data == ids.data)) {
         array4_free(ids);
       };
       if (1 < array4_size(duplicates)) {
-        display_duplicates(paths, duplicates, delimiter, cluster_count, (options & flag_display_clusters), (options & flag_reverse));
+        display_duplicates(paths, duplicates, delimiter, cluster_count, options & flag_display_clusters, options & flag_reverse);
         cluster_count += 1;
       };
       array4_free(duplicates);
