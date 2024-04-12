@@ -14,22 +14,21 @@ end
 
 drop_prefix = ARGV[0]
 add_prefix = ARGV[1]
-target_regexp = ARGV[1]
 dry_run = ARGV[2] != "run"
 clusters = $stdin.read.split "\n\n"
 
 clusters.each {|cluster|
   paths = cluster.split("\n")
   next unless paths.length > 1
-  target, duplicates = paths.partition {|a| paths.first == a}
-  target = target.first
+  targets, duplicates = paths.partition {|a| a.start_with? drop_prefix}
+  target = targets.first
   target = target.sub /^#{drop_prefix}/, add_prefix
   FileUtils.mkdir_p File.dirname(target) unless dry_run
   unless File.exists? target
     if dry_run
       puts duplicates.first + " -> " + target
     else
-      FileUtils.mv duplicates.first target
+      FileUtils.mv duplicates.first, target
     end
   end
 }

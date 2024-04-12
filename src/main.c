@@ -382,7 +382,7 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames, uint8_t 
     id = array4_get(ids);
     path = paths[id];
     name = simple_basename(path);
-    if (ignore_filenames && !ignore_content || strcmp(first_name, name)) {
+    if (ignore_filenames && !ignore_content || !ignore_filenames && strcmp(first_name, name)) {
       if (ignore_content || file_open(path, &file)) continue;
       if (file_mmap(file, size, &content)) {
         close(file);
