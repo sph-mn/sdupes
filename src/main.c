@@ -90,11 +90,15 @@ uint8_t file_mmap(int file, off_t size, uint8_t** out) {
   return(0);
 }
 
-static int id_time_less_p(const void* a, const void* b) {
-  return(((id_time_t*)a)->time < ((id_time_t*)b)->time ? -1 : (((id_time_t*)a)->time > ((id_time_t*)b)->time));
+int id_time_less_p(const void* a, const void* b) {
+  const id_time_t* aa = a;
+  const id_time_t* bb = b;
+  return(aa->time == bb->time
+    ? (aa->id < bb->id ? -1 : aa->id > bb->id)
+    : (aa->time < bb->time ? -1 : 1));
 }
 
-static int id_time_greater_p(const void* a, const void* b) {return id_time_less_p(b, a);}
+int id_time_greater_p(const void* a, const void* b) {return id_time_less_p(b, a);}
 
 uint8_t sort_ids_by_ctime(ids_t ids, char** paths, uint8_t sort_descending) {
   // sort ids in-place via temporary array of pairs of id and ctime
@@ -122,7 +126,9 @@ uint8_t sort_ids_by_ctime(ids_t ids, char** paths, uint8_t sort_descending) {
     for (uint8_t i = 1; i < array4_size(ids); i += 1) {
       id_time = ids_time[i];
       int8_t j = i - 1;
-      while (j >= 0 && (sort_descending ? ids_time[j].time < id_time.time : ids_time[j].time > id_time.time)) {
+      while (j >= 0 && (sort_descending
+        ? (ids_time[j].time == id_time.time ? ids_time[j].id < id_time.id : ids_time[j].time < id_time.time)
+        : (ids_time[j].time == id_time.time ? ids_time[j].id > id_time.id : ids_time[j].time > id_time.time))) {
         ids_time[j + 1] = ids_time[j];
         j = j - 1;
       }
@@ -161,7 +167,7 @@ uint8_t cli(int argc, char** argv) {
   int opt;
   uint8_t options;
   struct option longopts[8] = {{"cluster", no_argument, 0, 'c'}, {"help", no_argument, 0, 'h'}, {"ignore-content", no_argument, 0, 'd'},
-    {"ignore-filenames", no_argument, 0, 'n'}, {"null", no_argument, 0, '0'}, {"reverse", no_argument, 0, 'r'},
+    {"ignore-name", no_argument, 0, 'n'}, {"null", no_argument, 0, '0'}, {"reverse", no_argument, 0, 'r'},
     {"version", no_argument, 0, 'v'}, {0}};
   options = 0;
   while (!(-1 == (opt = getopt_long(argc, argv, "0cdhnrv", longopts, 0)))) {
