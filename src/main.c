@@ -2,19 +2,19 @@
 // ids are indices of the paths array.
 
 #define _POSIX_C_SOURCE 200809L
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
-#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
-#include <getopt.h>
 #include <foreign/murmur3.c>
+#include <foreign/sph-sc-lib/array4.h>
 #include <foreign/sph-sc-lib/hashtable.h>
 #include <foreign/sph-sc-lib/set.h>
-#include <foreign/sph-sc-lib/array4.h>
 #define paths_size_min 8192
 #define path_size_min 512
 #define paths_data_size_min paths_size_min * path_size_min
@@ -140,46 +140,47 @@ uint8_t sort_ids_by_ctime(ids_t ids, char** paths, uint8_t sort_descending) {
 }
 
 void display_help() {
-  printf("usage: sdupes\n");
-  printf("description\n");
-  printf("  read file paths from standard input and display paths of excess duplicate files sorted by creation time ascending.\n");
-  printf("  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n");
-  printf("  * size\n");
-  printf("  * murmur3 hashes of start, middle, and end portions\n");
-  printf("  * name or content\n");
-  printf("options\n");
-  printf("  --help, -h  display this help text\n");
-  printf("  --cluster, -c  display all paths with duplicates. two newlines between sets\n");
-  printf("  --ignore-filenames, -b  do a full byte-by-byte comparison even if size, hashes, and name are equal\n");
-  printf("  --ignore-content, -q  never do a full byte-by-byte comparison\n");
-  printf("  --null, -0  use a null byte to delimit paths. two null bytes between sets\n");
-  printf("  --reverse, -r  sort clusters by creation time descending\n");
-  printf("  --version, -v  show the running program version number\n");
+  printf("usage: sdupes\n"
+    "description\n"
+    "  read file paths from standard input and display paths of excess duplicate files sorted by creation time ascending.\n"
+    "  considers only regular files with differing device and inode. files are duplicate if all of the following properties match:\n"
+    "  * size\n"
+    "  * murmur3 hashes of start, middle, and end portions\n"
+    "  * name or content\n"
+    "options\n"
+    "  --help, -h  display this help text\n"
+    "  --cluster, -c  display all paths with duplicates. two newlines between sets\n"
+    "  --ignore-name, -n  do not consider file names\n"
+    "  --ignore-content, -d  do not consider the full file content\n"
+    "  --null, -0  use a null byte to delimit paths. two null bytes between sets\n"
+    "  --reverse, -r  sort clusters by creation time descending\n"
+    "  --version, -v  show the running program version number\n");
 }
 
 uint8_t cli(int argc, char** argv) {
   int opt;
   uint8_t options;
-  struct option longopts[8] = {{"help", no_argument, 0, 'h'}, {"cluster", no_argument, 0, 'c'}, {"null", no_argument, 0, '0'},
-    {"reverse", no_argument, 0, 's'}, {"ignore-filenames", no_argument, 0, 'b'}, {"ignore-content", no_argument, 0, 'q'}, {"version", no_argument, 0, 'v'}, {0}};
+  struct option longopts[8] = {{"cluster", no_argument, 0, 'c'}, {"help", no_argument, 0, 'h'}, {"ignore-content", no_argument, 0, 'd'},
+    {"ignore-filenames", no_argument, 0, 'n'}, {"null", no_argument, 0, '0'}, {"reverse", no_argument, 0, 'r'},
+    {"version", no_argument, 0, 'v'}, {0}};
   options = 0;
-  while (!(-1 == (opt = getopt_long(argc, argv, "ch0rbqv", longopts, 0)))) {
+  while (!(-1 == (opt = getopt_long(argc, argv, "0cdhnrv", longopts, 0)))) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
       break;
-    } else if ('c' == opt) {
-      options = (flag_display_clusters | options);
     } else if ('0' == opt) {
       options = (flag_null_delimiter | options);
+    } else if ('c' == opt) {
+      options = (flag_display_clusters | options);
+    } else if ('d' == opt) {
+      options = (flag_ignore_content | options);
+    } else if ('n' == opt) {
+      options = (flag_ignore_filenames | options);
     } else if ('r' == opt) {
       options = (flag_reverse | options);
-    } else if ('b' == opt) {
-      options = (flag_ignore_filenames | options);
-    } else if ('q' == opt) {
-      options = (flag_ignore_content | options);
     } if ('v' == opt) {
-      printf("v1.4\n");
+      printf("v1.5\n");
       options = (flag_exit | options);
       break;
     };

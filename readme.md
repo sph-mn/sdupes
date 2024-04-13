@@ -29,8 +29,8 @@ description
 options
   --help, -h  display this help text
   --cluster, -c  display all paths with duplicates. two newlines between sets
-  --ignore-filenames, -b  do a full byte-by-byte comparison even if size, hashes, and name are equal
-  --ignore-content, -q  never do a full byte-by-byte comparison
+  --ignore-name, -n  do not consider file names
+  --ignore-content, -d  do not consider the full file content
   --null, -0  use a null byte to delimit paths. two null bytes between sets
   --reverse, -r  sort clusters by creation time descending
   --version, -v  show the running program version number
