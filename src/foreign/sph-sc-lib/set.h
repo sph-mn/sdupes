@@ -2,23 +2,21 @@
 #ifndef sph_set_h
 #define sph_set_h
 
-/* a macro that defines set data types and functions for arbitrary value types.
+/* a macro that defines set data types and related functions for arbitrary value types.
  * compared to hashtable.c, this uses less than half the space and operations are faster (about 20% in first tests)
  * linear probing for collision resolve
  * sph-set-declare-type allows the null value (used for unset elements) to be part of the set
- * except the null value, values are in .values starting from index 1
+ * except for the null value, values are in field .values starting from index 1
  * notnull is used at index 0 to check if the empty-value is included
- * sph-set-declare-type-nonull does not allow the null value to be part of the set and should be a bit faster
+ * sph-set-declare-type-nonull does not support the null value to be part of the set and should be a bit faster
  * values are in .values, starting from index 0
- * null and notnull arguments are user provided so that they have same data type as other set elements
+ * null and notnull arguments are user provided so that they have the same data type as other set elements
  * primes from https://planetmath.org/goodhashtableprimes
- * automatic resizing is not implemented but easy to do */
+ * automatic resizing is not implemented. resizing can be done by re-inserting each value into a larger set */
 #include <stdlib.h>
 #include <inttypes.h>
 uint32_t sph_set_primes[] = { 53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317, 196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653, 100663319, 201326611, 402653189, 805306457, 1610612741 };
 uint32_t* sph_set_primes_end = (sph_set_primes + 25);
-#endif
-
 #define sph_set_hash_integer(value, hashtable_size) (value % hashtable_size)
 #define sph_set_equal_integer(value_a, value_b) (value_a == value_b)
 #define sph_set_declare_type_shared_1(name, value_type, set_hash, set_equal, null, size_factor) \
@@ -211,3 +209,4 @@ uint32_t* sph_set_primes_end = (sph_set_primes + 25);
 #define sph_set_declare_type_nonull(name, value_type, hash, equal, null, size_factor) sph_set_declare_type_shared_1(name, value_type, hash, equal, null, size_factor) \
   sph_set_declare_type_without_null(name, value_type, hash, equal, null, size_factor) \
     sph_set_declare_type_shared_2(name, value_type, hash, equal, null, size_factor)
+#endif

@@ -3,4 +3,4 @@
 # run sdupes and check for memory leaks with valgrind
 
 options="--leak-check=full --show-leak-kinds=all --track-origins=yes"
-valgrind --tool=memcheck $options ./exe/sdupes "$@"
+valgrind --tool=memcheck $options ./exe/compiled/sdupes "$@"

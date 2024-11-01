@@ -11,10 +11,61 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdatomic.h>
 #include <foreign/murmur3.c>
 #include <foreign/sph-sc-lib/array4.h>
 #include <foreign/sph-sc-lib/hashtable.h>
 #include <foreign/sph-sc-lib/set.h>
+#include <foreign/sph-sc-lib/queue.h>
+#include <pthread.h>
+
+typedef struct {uint64_t data[6];} checksum_t;
+typedef size_t id_t;
+typedef struct {id_t id; time_t time;} id_time_t;
+typedef struct {dev_t device; ino_t inode;} device_and_inode_t;
+array4_declare_type(ids, id_t); // ids_t
+
+typedef struct {
+  atomic_int count;
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
+} latch_t;
+
+typedef struct get_ids_by_size_stat_t {
+  dev_t st_dev;
+  ino_t st_ino;
+  off_t st_size;
+  mode_t st_mode;
+} get_ids_by_size_stat_t;
+
+typedef struct get_ids_by_size_task_data_t {
+  get_ids_by_size_stat_t* stats;
+  id_t start;
+  id_t end;
+} get_ids_by_size_task_data_t;
+
+typedef struct get_cluster_task_data_t {
+  ids_t ids;
+  uint8_t options;
+  uint8_t delimiter;
+} get_cluster_task_data_t;
+
+struct sph_thread_pool_task_t;
+
+typedef struct sph_thread_pool_task_t {
+  sph_queue_node_t q;
+  void (*f)(struct sph_thread_pool_task_t*);
+  char** paths;
+  latch_t* latch;
+  union {
+    get_ids_by_size_task_data_t get_ids_by_size;
+    get_cluster_task_data_t get_cluster;
+  } data;
+} sph_thread_pool_task_t;
+
+#define sph_thread_pool_task_t_defined
+#include <foreign/sph-sc-lib/thread-pool.h>
+#include <foreign/sph-sc-lib/thread-pool.c>
 #define paths_size_min 8192
 #define path_size_min 512
 #define paths_data_size_min paths_size_min * path_size_min
@@ -32,25 +83,19 @@
 #define checksum_equal(key_a, key_b) !memcmp((key_a.data), (key_b.data), 48)
 #define device_and_inode_hash(key, size) (key.inode % size)
 #define device_and_inode_equal(key_a, key_b) ((key_a.inode == key_b.inode) && (key_a.device == key_b.device))
+#define paths_per_thread 250
 
-#define ids_add_with_resize(a, id)                                      \
-  if ((array4_size(a) == array4_max_size(a)) && ids_resize(&a, (2 * array4_max_size(a)))) { \
-    memory_error; \
-  } else { \
-    array4_add(a, id); \
-  }
+#define ids_add_with_resize(a, id) \
+  if ((array4_size(a) == array4_max_size(a)) && ids_resize(&a, (2 * array4_max_size(a)))) memory_error; \
+  else {array4_add(a, id);}
 
-typedef struct {uint64_t data[6];} checksum_t;
-typedef size_t id_t;
-typedef struct {id_t id; time_t time;} id_time_t;
-typedef struct {dev_t device; ino_t inode;} device_and_inode_t;
-array4_declare_type(ids, id_t); // ids_t
 sph_hashtable_declare_type(id_by_size, off_t, id_t, sph_hashtable_hash_integer, sph_hashtable_equal_integer, 2);
 sph_hashtable_declare_type(ids_by_size, off_t, ids_t, sph_hashtable_hash_integer, sph_hashtable_equal_integer, 2);
 sph_hashtable_declare_type(id_by_checksum, checksum_t, id_t, checksum_hash, checksum_equal, 2);
 sph_hashtable_declare_type(ids_by_checksum, checksum_t, ids_t, checksum_hash, checksum_equal, 2);
 device_and_inode_t device_and_inode_null = {0};
 sph_set_declare_type_nonull(device_and_inode_set, device_and_inode_t, device_and_inode_hash, device_and_inode_equal, device_and_inode_null, 2);
+sph_thread_pool_t thread_pool;
 
 uint8_t* simple_basename(uint8_t* path) {
   uint8_t* slash_pointer = strrchr(path, '/');
@@ -90,6 +135,20 @@ uint8_t file_mmap(int file, off_t size, uint8_t** out) {
   return(0);
 }
 
+void latch_init(latch_t* latch, int initial_count) {
+  atomic_init(&latch->count, initial_count);
+  pthread_mutex_init(&latch->mutex, 0);
+  pthread_cond_init(&latch->cond, 0);
+}
+
+void latch_wait(latch_t* latch) {
+  pthread_mutex_lock(&latch->mutex);
+  while (atomic_load(&latch->count) > 0) {
+    pthread_cond_wait(&latch->cond, &latch->mutex);
+  }
+  pthread_mutex_unlock(&latch->mutex);
+}
+
 int id_time_less_p(const void* a, const void* b) {
   const id_time_t* aa = a;
   const id_time_t* bb = b;
@@ -113,13 +172,14 @@ uint8_t sort_ids_by_ctime(ids_t ids, char** paths, uint8_t sort_descending) {
   if (!ids_time) memory_error;
   for (size_t i = 0; i < array4_size(ids); i += 1) {
     id = array4_get_at(ids, i);
+    ids_time[i].id = id;
     path = paths[id];
-    if (file_open(path, &file)) continue;
+    if (file_open(path, &file)) {
+      ids_time[i] = id_time_null;
+      continue;
+    };
     if (file_stat(file, path, &stat_info)) ids_time[i] = id_time_null;
-    else {
-      ids_time[i].id = id;
-      ids_time[i].time = stat_info.st_ctime;
-    }
+    else ids_time[i].time = stat_info.st_ctime;
     close(file);
   };
   if (64 > array4_size(ids)) {
@@ -174,19 +234,14 @@ uint8_t cli(int argc, char** argv) {
     if ('h' == opt) {
       display_help();
       options = (flag_exit | options);
-      break;
-    } else if ('0' == opt) {
-      options = (flag_null_delimiter | options);
-    } else if ('c' == opt) {
-      options = (flag_display_clusters | options);
-    } else if ('d' == opt) {
-      options = (flag_ignore_content | options);
-    } else if ('n' == opt) {
-      options = (flag_ignore_filenames | options);
-    } else if ('r' == opt) {
-      options = (flag_reverse | options);
-    } if ('v' == opt) {
-      printf("v1.5\n");
+    break;
+    } else if ('0' == opt) options = (flag_null_delimiter | options);
+    else if ('c' == opt) options = (flag_display_clusters | options);
+    else if ('d' == opt) options = (flag_ignore_content | options);
+    else if ('n' == opt) options = (flag_ignore_filenames | options);
+    else if ('r' == opt) options = (flag_reverse | options);
+    else if ('v' == opt) {
+      printf("v1.6\n");
       options = (flag_exit | options);
       break;
     };
@@ -199,12 +254,13 @@ char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
   // all paths must end with the delimiter.
   // data will contain the full string read from standard input with newlines replaced by null bytes,
   // while paths contains pointers to the beginning of each path in data.
-  size_t data_index = 0;
   size_t data_size = paths_data_size_min;
   size_t data_used = 0;
   size_t paths_size = paths_size_min;
   ssize_t read_size;
   char* data = malloc(paths_data_size_min);
+  char* p;
+  char* data_end;
   if (!data) memory_error;
   *paths = malloc(paths_size_min * sizeof(char*));
   if (!*paths) memory_error;
@@ -217,67 +273,112 @@ char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
       if (!data) memory_error;
     }
   }
-  for (size_t i = 0; i < data_used; i += 1) {
-    if (delimiter == data[i] && i > data_index) {
-      if (paths_size == *paths_used) {
-        paths_size *= 2;
-        *paths = realloc(*paths, paths_size * sizeof(char*));
-        if (!*paths) memory_error;
-      }
-      data[i] = 0;
-      (*paths)[*paths_used] = data + data_index;
-      data_index = i + 1;
-      *paths_used += 1;
-    }
-  }
   handle_error(read_size);
   if (!data_used) exit(0);
+  p = data;
+  data_end = data + data_used;
+  while (p < data_end) {
+    char* next_delim = memchr(p, delimiter, data_end - p);
+    if (!next_delim) break;
+    if (next_delim > p) {
+        if (paths_size == *paths_used) {
+            paths_size *= 2;
+            *paths = realloc(*paths, paths_size * sizeof(char*));
+            if (!*paths) memory_error;
+        }
+        *next_delim = 0;
+        (*paths)[*paths_used] = p;
+        (*paths_used) += 1;
+    }
+    p = next_delim + 1;
+  }
   return(data);
 }
 
-ids_by_size_t get_duplicated_ids_by_size(char** paths, size_t paths_size) {
+void get_ids_by_size_thread(sph_thread_pool_task_t* task) {
+  sph_thread_pool_task_t t = *task;
+  struct stat stat_info;
+  for (id_t i = t.data.get_ids_by_size.start; i < t.data.get_ids_by_size.end; i += 1) {
+    if (stat(t.paths[i], &stat_info)) {
+      display_error("could not stat %s %s", strerror(errno), t.paths[i]);
+      continue;
+    };
+    t.data.get_ids_by_size.stats[i].st_dev = stat_info.st_dev;
+    t.data.get_ids_by_size.stats[i].st_ino = stat_info.st_ino;
+    t.data.get_ids_by_size.stats[i].st_size = stat_info.st_size;
+    t.data.get_ids_by_size.stats[i].st_mode = stat_info.st_mode;
+  }
+  if (1 == atomic_fetch_sub(&t.latch->count, 1)) {
+    pthread_mutex_lock(&t.latch->mutex);
+    pthread_cond_signal(&t.latch->cond);
+    pthread_mutex_unlock(&t.latch->mutex);
+  }
+}
+
+void get_ids_by_size_stat(char** paths, size_t paths_size, get_ids_by_size_stat_t* stats, size_t batch_count) {
+  sph_thread_pool_task_t* tasks;
+  latch_t latch;
+  tasks = malloc(batch_count * sizeof(sph_thread_pool_task_t));
+  if (!tasks) memory_error;
+  latch_init(&latch, batch_count);
+  for (size_t i = 0; i < batch_count; i += 1) {
+    tasks[i].data.get_ids_by_size.stats = stats;
+    tasks[i].data.get_ids_by_size.start = i * paths_per_thread;
+    tasks[i].data.get_ids_by_size.end = tasks[i].data.get_ids_by_size.start + paths_per_thread;
+    if (tasks[i].data.get_ids_by_size.end > paths_size) tasks[i].data.get_ids_by_size.end = paths_size;
+    tasks[i].paths = paths;
+    tasks[i].latch = &latch;
+    tasks[i].f = get_ids_by_size_thread;
+    sph_thread_pool_enqueue(&thread_pool, tasks + i);
+  }
+  latch_wait(&latch);
+  free(tasks);
+}
+
+ids_by_size_t get_ids_by_size(char** paths, size_t paths_size, id_t* cluster_count) {
   // the result will only contain ids of regular files (no directories, symlinks, etc)
+  device_and_inode_set_t device_and_inode_set;
+  device_and_inode_t device_and_inode;
+  get_ids_by_size_stat_t* stats;
+  ids_by_size_t ids_by_size;
   id_by_size_t id_by_size;
   id_t* id;
-  ids_by_size_t ids_by_size;
   ids_t* ids;
   ids_t new_ids;
-  device_and_inode_t device_and_inode;
-  device_and_inode_set_t device_and_inode_set;
-  struct stat stat_info;
+  size_t batch_count;
+  batch_count = (paths_size + paths_per_thread - 1) / paths_per_thread;
+  if (1 > batch_count) batch_count = 1;
+  stats = malloc(paths_size * sizeof(get_ids_by_size_stat_t));
+  if (!stats) memory_error;
+  get_ids_by_size_stat(paths, paths_size, stats, batch_count);
   if (id_by_size_new(paths_size, &id_by_size) || ids_by_size_new(paths_size, &ids_by_size) || device_and_inode_set_new(paths_size, &device_and_inode_set)) {
     memory_error;
-  };
+  }
+  *cluster_count = 0;
   for (id_t i = 0; i < paths_size; i += 1) {
-    if (lstat(paths[i], &stat_info)) {
-      display_error("could not lstat %s %s", strerror(errno), paths[i]);
-      continue;
-    };
-    if (!S_ISREG((stat_info.st_mode))) continue;
-    device_and_inode.device = stat_info.st_dev;
-    device_and_inode.inode = stat_info.st_ino;
-    if (device_and_inode_set_get(device_and_inode_set, device_and_inode)) {
-      continue;
-    } else {
-      device_and_inode_set_add(device_and_inode_set, device_and_inode);
-    };
-    id = id_by_size_get(id_by_size, (stat_info.st_size));
+    if (!S_ISREG((stats[i].st_mode))) continue;
+    id = id_by_size_get(id_by_size, stats[i].st_size);
     if (!id) {
-      id_by_size_set(id_by_size, (stat_info.st_size), i);
+      id_by_size_set(id_by_size, stats[i].st_size, i);
       continue;
-    };
-    ids = ids_by_size_get(ids_by_size, (stat_info.st_size));
+    }
+    device_and_inode.device = stats[i].st_dev;
+    device_and_inode.inode = stats[i].st_ino;
+    ids = ids_by_size_get(ids_by_size, stats[i].st_size);
     if (ids) {
-      ids_add_with_resize((*ids), i);
+      if (!device_and_inode_set_get(device_and_inode_set, device_and_inode)) {
+        ids_add_with_resize((*ids), i);
+      }
       continue;
-    };
-    if (ids_new(8, &new_ids)) {
-      memory_error;
-    };
-    array4_add(new_ids, (*id));
+    }
+    if (ids_new(8, &new_ids)) memory_error;
+    array4_add(new_ids, *id);
     array4_add(new_ids, i);
-    ids_by_size_set(ids_by_size, (stat_info.st_size), new_ids);
-  };
+    ids_by_size_set(ids_by_size, stats[i].st_size, new_ids);
+    device_and_inode_set_add(device_and_inode_set, device_and_inode);
+    *cluster_count += 1;
+  }
+  free(stats);
   id_by_size_free(id_by_size);
   device_and_inode_set_free(device_and_inode_set);
   return(ids_by_size);
@@ -329,25 +430,21 @@ ids_by_checksum_t get_ids_by_checksum(char** paths, ids_t ids) {
   };
   while (array4_in_range(ids)) {
     id = array4_get(ids);
-    if (get_checksum(paths[id], &checksum)) {
-      display_error("could not calculate checksum for %s", paths[id]);
-    };
+    if (get_checksum(paths[id], &checksum)) display_error("could not calculate checksum for %s", paths[id]);
     checksum_id = id_by_checksum_get(id_by_checksum, checksum);
     if (checksum_id) {
       checksum_ids = ids_by_checksum_get(ids_by_checksum, checksum);
       if (checksum_ids) {
         ids_add_with_resize((*checksum_ids), id);
-      } else {
-        if (ids_new(4, &new_checksum_ids)) {
-          memory_error;
-        };
+      }
+      else {
+        if (ids_new(4, &new_checksum_ids)) memory_error;
         array4_add(new_checksum_ids, (*checksum_id));
         array4_add(new_checksum_ids, id);
         ids_by_checksum_set(ids_by_checksum, checksum, new_checksum_ids);
       };
-    } else {
-      id_by_checksum_set(id_by_checksum, checksum, id);
-    };
+    }
+    else id_by_checksum_set(id_by_checksum, checksum, id);
     array4_forward(ids);
   };
   id_by_checksum_free(id_by_checksum);
@@ -355,15 +452,16 @@ ids_by_checksum_t get_ids_by_checksum(char** paths, ids_t ids) {
 }
 
 ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames, uint8_t ignore_content) {
-  // return ids whose file name or file content is equal
-  uint8_t* content;
+  // return ids whose file name or file content is equal.
+  // compare each with the first.
+  id_t id;
   int file;
+  off_t size;
+  uint8_t* content;
   uint8_t* first_content;
   uint8_t* first_name;
-  id_t id;
   uint8_t* name;
   uint8_t* path;
-  off_t size;
   array4_declare(duplicates, ids_t);
   if (!array4_in_range(ids)) return(duplicates);
   id = array4_get(ids);
@@ -398,70 +496,113 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames, uint8_t 
       close(file);
       if (!memcmp(first_content, content, size)) {
         array4_add(duplicates, id);
-      };
+      }
       munmap(content, size);
     } else {
       array4_add(duplicates, id);
-    };
+    }
   }
   munmap(first_content, size);
-  if (1 == array4_size(duplicates)) {
-    array4_remove(duplicates);
-  };
+  if (1 == array4_size(duplicates)) array4_remove(duplicates);
   return(duplicates);
 }
 
-void display_duplicates(char** paths, ids_t ids, uint8_t delimiter, id_t cluster_count, uint8_t display_cluster, uint8_t reverse) {
+pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
+uint8_t stdout_empty = 1;
+
+void display_duplicates(char** paths, ids_t ids, uint8_t delimiter, uint8_t display_cluster, uint8_t reverse) {
   // assumes that ids contains at least two entries
-  if (1 < ids.size && sort_ids_by_ctime(ids, paths, reverse)) return;
+  pthread_mutex_lock(&stdout_mutex);
+  if (1 < ids.size && sort_ids_by_ctime(ids, paths, reverse)) goto exit;
   if (display_cluster) {
-    if (cluster_count) putchar(delimiter);
-  } else array4_forward(ids);
+    if (stdout_empty) stdout_empty = 0;
+    else putchar(delimiter);
+  } else {
+    array4_forward(ids);
+  }
   do {
     printf("%s%c", paths[array4_get(ids)], delimiter);
     array4_forward(ids);
   } while (array4_in_range(ids));
+ exit:
+  pthread_mutex_unlock(&stdout_mutex);
+}
+
+void get_cluster_thread(sph_thread_pool_task_t* task) {
+  sph_thread_pool_task_t t = *task;
+  ids_by_checksum_t ids_by_checksum;
+  ids_t ids;
+  ids_t duplicates;
+  ids_by_checksum = get_ids_by_checksum(t.paths, t.data.get_cluster.ids);
+  array4_free(t.data.get_cluster.ids);
+  for (size_t i = 0; (i < ids_by_checksum.size); i += 1) {
+    if (!(ids_by_checksum.flags)[i]) continue;
+    ids = (ids_by_checksum.values)[i];
+    duplicates = get_duplicates(t.paths, ids, t.data.get_cluster.options & flag_ignore_filenames,
+      t.data.get_cluster.options & flag_ignore_content);
+    if (duplicates.data != ids.data) array4_free(ids);
+    if (1 < array4_size(duplicates)) {
+      display_duplicates(t.paths, duplicates, t.data.get_cluster.delimiter,
+        t.data.get_cluster.options & flag_display_clusters, t.data.get_cluster.options & flag_reverse);
+    };
+    array4_free(duplicates);
+  };
+  ids_by_checksum_free(ids_by_checksum);
+  if (1 == atomic_fetch_sub(&(t.latch->count), 1)) {
+    pthread_mutex_lock(&(t.latch->mutex));
+    pthread_cond_signal(&(t.latch->cond));
+    pthread_mutex_unlock(&(t.latch->mutex));
+  }
 }
 
 int main(int argc, char** argv) {
-  uint8_t delimiter;
-  ids_t duplicates;
-  ids_by_checksum_t ids_by_checksum;
+  char** paths;
+  char* paths_data;
+  id_t cluster_count;
+  latch_t latch;
+  size_t paths_size;
+  size_t thread_count;
+  sph_thread_pool_size_t cpu_count;
+  sph_thread_pool_task_t* tasks;
   ids_by_size_t ids_by_size;
   ids_t ids;
+  uint8_t delimiter;
   uint8_t options;
-  id_t cluster_count;
-  char** paths;
-  char* paths_data = 0;
-  size_t paths_size;
   options = cli(argc, argv);
   if (flag_exit & options) return(1);
   delimiter = ((options & flag_null_delimiter) ? 0 : '\n');
   paths_data = get_paths(delimiter, &paths, &paths_size);
-  ids_by_size = get_duplicated_ids_by_size(paths, paths_size);
-  cluster_count = 0;
+  if (!paths_size) return(0);
+  // initialize thread pool
+  cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+  thread_count = paths_size / paths_per_thread;
+  if (1 > thread_count || 1 > cpu_count) thread_count = 1;
+  else if (thread_count > cpu_count) thread_count = cpu_count;
+  if (sph_thread_pool_new(thread_count, &thread_pool)) return(1);
+  // start filtering
+  ids_by_size = get_ids_by_size(paths, paths_size, &cluster_count);
+  if (!cluster_count) return(0);
+  tasks = malloc(cluster_count * sizeof(sph_thread_pool_task_t));
+  if (!tasks) memory_error;
+  latch_init(&latch, cluster_count);
   for (size_t i = 0; (i < ids_by_size.size); i += 1) {
     if (!ids_by_size.flags[i]) continue;
     ids = (ids_by_size.values)[i];
-    ids_by_checksum = get_ids_by_checksum(paths, ids);
-    array4_free(ids);
-    for (size_t j = 0; (j < ids_by_checksum.size); j += 1) {
-      if (!(ids_by_checksum.flags)[j]) continue;
-      ids = (ids_by_checksum.values)[j];
-      duplicates = get_duplicates(paths, ids, options & flag_ignore_filenames, options & flag_ignore_content);
-      if (!(duplicates.data == ids.data)) {
-        array4_free(ids);
-      };
-      if (1 < array4_size(duplicates)) {
-        display_duplicates(paths, duplicates, delimiter, cluster_count, options & flag_display_clusters, options & flag_reverse);
-        cluster_count += 1;
-      };
-      array4_free(duplicates);
-    };
-    ids_by_checksum_free(ids_by_checksum);
+    cluster_count -= 1;
+    tasks[cluster_count].data.get_cluster.ids = ids;
+    tasks[cluster_count].data.get_cluster.options = options;
+    tasks[cluster_count].data.get_cluster.delimiter = delimiter;
+    tasks[cluster_count].paths = paths;
+    tasks[cluster_count].latch = &latch;
+    tasks[cluster_count].f = get_cluster_thread;
+    sph_thread_pool_enqueue(&thread_pool, tasks + cluster_count);
   };
+  latch_wait(&latch);
+  free(tasks);
   ids_by_size_free(ids_by_size);
   free(paths_data);
   free(paths);
+  sph_thread_pool_finish(&thread_pool, 0, 0);
+  pthread_mutex_destroy(&stdout_mutex);
   return(0);
 }

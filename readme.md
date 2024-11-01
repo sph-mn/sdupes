@@ -45,7 +45,7 @@ options
 ~~~
 sh ./exe/compile
 ~~~
-this should create `exe/sdupes` which is the statically compiled final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
+this should create `exe/compiled/sdupes` which is the statically compiled final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
 
 # technical details
 * all input path names are loaded into memory. in my test, memory usage stayed under 1GB for a 31200 files music library

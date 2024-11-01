@@ -6,13 +6,10 @@
 #include <string.h>
 #include <inttypes.h>
 /* a macro that defines hash-table data types for arbitrary key/value types,
-with linear probing for collision resolve and hash and equal functions customisable
-by defining macro variables and re-including the source.
+with linear probing for collision resolve and customizable hash and equal functions.
 prime numbers from https://planetmath.org/goodhashtableprimes */
 uint32_t sph_hashtable_primes[] = { 53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317, 196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653, 100663319, 201326611, 402653189, 805306457, 1610612741 };
 uint32_t* sph_hashtable_primes_end = (sph_hashtable_primes + 25);
-#endif
-
 #define sph_hashtable_hash_integer(key, hashtable_size) (key % hashtable_size)
 #define sph_hashtable_equal_integer(key_a, key_b) (key_a == key_b)
 #define sph_hashtable_declare_type(name, key_type, value_type, hashtable_hash, hashtable_equal, size_factor) \
@@ -146,3 +143,4 @@ uint32_t* sph_hashtable_primes_end = (sph_hashtable_primes + 25);
     }; \
   } \
   void name##_clear(name##_t a) { memset((a.flags), 0, (a.size)); }
+#endif

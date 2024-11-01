@@ -2,14 +2,14 @@
 
 sph_sc_root="$1"
 destination="$PWD/src/foreign/sph-sc-lib"
-source="$sph_sc_root/source/c-precompiled/sph"
+source="$sph_sc_root/src/c-precompiled/sph"
 
 if test -d "$destination"
 then
-   rm "$destination"/*
+  rm "$destination"/*
 else
   mkdir -p "$destination"
 fi
 
 cd "$source"
-cp hashtable.h array4.h set.h "$destination"
+cp hashtable.h array4.h set.h queue.h thread-pool.h thread-pool.c "$destination"

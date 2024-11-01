@@ -1,6 +1,11 @@
 #!/bin/sh
 
+# development
+#compiler=gcc
+#compiler_options="-Wunused-label -Wunused-value -Wfatal-errors -g3 -O0 -fno-inline -fstack-protector-all -fno-omit-frame-pointer -std=c11 -static -pthread -I src"
+
 if command -v musl-gcc > /dev/null; then compiler=musl-gcc; else compiler=gcc; fi
-compiler_options="-Wunused-label -Wunused-value -Wunused-variable -Wfatal-errors -std=c11 -O3 -static -I src"
-$compiler $compiler_options src/main.c -o exe/sdupes
-chmod +x exe/sdupes
+compiler_options="-Wunused-label -Wunused-value -Wunused-variable -Wfatal-errors -std=c11 -O3 -static -pthread -I src"
+mkdir -p exe/compiled
+$compiler $compiler_options src/main.c -o exe/compiled/sdupes
+chmod +x exe/compiled/sdupes
