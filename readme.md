@@ -1,5 +1,4 @@
 # sdupes - fast duplicate file detection
-
 at this point in time, many duplicate file finders are slow or overengineered. sdupes reads paths from standard input and writes paths of duplicate files to standard output.
 
 # usage
@@ -12,9 +11,24 @@ this lists excess duplicate files. the oldest file of each set is always left ou
 if no duplicates are found, nothing is displayed.
 
 ## remove duplicates
-sdupes can be used with xargs to remove duplicate files:
+sdupes can be used together with `xargs` and `rm` to remove duplicate files:
 ~~~
-find | sdupes | xargs -n 1 -d \\n rm
+find | sdupes | xargs -n 1 -d '\n' rm
+~~~
+
+instead of xargs,the following shell script can be used.
+
+nargs
+~~~
+#!/bin/sh
+
+# for each newline separated line, read from standard input and call a command with line as argument.
+# example: "find . | sdupes | nargs echo" the argument is:
+
+while read line
+do
+  "$@" "$line"
+done
 ~~~
 
 ## sdupes --help
@@ -45,17 +59,18 @@ options
 ~~~
 sh ./exe/compile
 ~~~
-this should create `exe/compiled/sdupes` which is the statically compiled final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (if the file has the execute bit set).
+this should create `exe/compiled/sdupes` which is the statically compiled final executable and can be taken and copied anywhere. for example, it can be copied or symlinked into `/usr/bin` (as root) after which sdupes should be available as a command on the command-line (as long as the file's execute bit is set).
 
 # technical details
-* all input path names are loaded into memory. in my test, memory usage stayed under 1GB for a 31200 files music library
-* tiny hashtable and set implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
+* all input path names are loaded into memory. in my test, memory usage remained below 1GB for a 31200 files music library
+* duplicate checking is done in parallel for each group of files with equal size. the number of threads depends on the number of paths that are processed
+* tiny hashtable, set, and thread-pool implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
 
 # license
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
 
 # performance comparison
-quick tests using bash "time" comparing sdupes to other popular duplicate finders.
+quick tests using bash "time" comparing sdupes v1.5 to other popular duplicate finders.
 
 714G in 27697 files with 800M in 11 duplicates:
 * sdupes: 0m0.119s
@@ -74,10 +89,8 @@ quick tests using bash "time" comparing sdupes to other popular duplicate finder
 * exe/md5comparison-run compares the md5 sums of duplicates
 
 # possible enhancements
+* option to disable parallelization for storage media exhibiting suboptimal performance under concurrent access
 * allow usage as a library by not necessarily exiting the process
-* parallelization. this can increase throughput on ssds and distributed storage
-  * the file size clustering can be split into batches. the per-cluster checksum and byte comparisons are independent
-  * [futures.h](https://github.com/sph-mn/sph-sc-lib/blob/master/source/c-precompiled/sph/futures.h)
 
 # similar projects
 * [rmlint](https://github.com/sahib/rmlint)

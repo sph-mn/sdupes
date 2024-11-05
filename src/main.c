@@ -281,14 +281,14 @@ char* get_paths(char delimiter, char*** paths, size_t* paths_used) {
     char* next_delim = memchr(p, delimiter, data_end - p);
     if (!next_delim) break;
     if (next_delim > p) {
-        if (paths_size == *paths_used) {
-            paths_size *= 2;
-            *paths = realloc(*paths, paths_size * sizeof(char*));
-            if (!*paths) memory_error;
-        }
-        *next_delim = 0;
-        (*paths)[*paths_used] = p;
-        (*paths_used) += 1;
+      if (paths_size == *paths_used) {
+        paths_size *= 2;
+        *paths = realloc(*paths, paths_size * sizeof(char*));
+        if (!*paths) memory_error;
+      }
+      *next_delim = 0;
+      (*paths)[*paths_used] = p;
+      (*paths_used) += 1;
     }
     p = next_delim + 1;
   }
@@ -299,7 +299,7 @@ void get_ids_by_size_thread(sph_thread_pool_task_t* task) {
   sph_thread_pool_task_t t = *task;
   struct stat stat_info;
   for (id_t i = t.data.get_ids_by_size.start; i < t.data.get_ids_by_size.end; i += 1) {
-    if (stat(t.paths[i], &stat_info)) {
+    if (lstat(t.paths[i], &stat_info)) {
       display_error("could not stat %s %s", strerror(errno), t.paths[i]);
       continue;
     };
@@ -508,10 +508,10 @@ ids_t get_duplicates(char** paths, ids_t ids, uint8_t ignore_filenames, uint8_t 
 }
 
 pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
-uint8_t stdout_empty = 1;
 
 void display_duplicates(char** paths, ids_t ids, uint8_t delimiter, uint8_t display_cluster, uint8_t reverse) {
   // assumes that ids contains at least two entries
+  static uint8_t stdout_empty = 1;
   pthread_mutex_lock(&stdout_mutex);
   if (1 < ids.size && sort_ids_by_ctime(ids, paths, reverse)) goto exit;
   if (display_cluster) {
