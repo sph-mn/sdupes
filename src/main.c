@@ -362,12 +362,16 @@ ids_by_size_t get_ids_by_size(char** paths, size_t paths_size, id_t* cluster_cou
       id_by_size_set(id_by_size, stats[i].st_size, i);
       continue;
     }
-    device_and_inode.device = stats[i].st_dev;
-    device_and_inode.inode = stats[i].st_ino;
+    if (stats[*id].st_dev == stats[i].st_dev && stats[*id].st_ino == stats[i].st_ino) {
+      continue;
+    }
     ids = ids_by_size_get(ids_by_size, stats[i].st_size);
     if (ids) {
+      device_and_inode.device = stats[i].st_dev;
+      device_and_inode.inode = stats[i].st_ino;
       if (!device_and_inode_set_get(device_and_inode_set, device_and_inode)) {
         ids_add_with_resize((*ids), i);
+        device_and_inode_set_add(device_and_inode_set, device_and_inode);
       }
       continue;
     }
@@ -375,6 +379,11 @@ ids_by_size_t get_ids_by_size(char** paths, size_t paths_size, id_t* cluster_cou
     array4_add(new_ids, *id);
     array4_add(new_ids, i);
     ids_by_size_set(ids_by_size, stats[i].st_size, new_ids);
+    device_and_inode.device = stats[*id].st_dev;
+    device_and_inode.inode = stats[*id].st_ino;
+    device_and_inode_set_add(device_and_inode_set, device_and_inode);
+    device_and_inode.device = stats[i].st_dev;
+    device_and_inode.inode = stats[i].st_ino;
     device_and_inode_set_add(device_and_inode_set, device_and_inode);
     *cluster_count += 1;
   }
