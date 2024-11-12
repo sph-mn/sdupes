@@ -23,7 +23,7 @@ nargs
 #!/bin/sh
 
 # for each newline separated line, read from standard input and call a command with line as argument.
-# example: "find . | sdupes | nargs echo" the argument is:
+# example: "find . | sdupes | nargs echo"
 
 while read line
 do
@@ -47,7 +47,7 @@ options
   --ignore-content, -d  do not consider the full file content
   --null, -0  use a null byte to delimit paths. two null bytes between sets
   --reverse, -r  sort clusters by creation time descending
-  --version, -v  show the running program version number
+  --version, -v  show the program version number
 ~~~
 
 # dependencies

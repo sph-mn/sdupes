@@ -220,7 +220,7 @@ void display_help() {
     "  --ignore-content, -d  do not consider the full file content\n"
     "  --null, -0  use a null byte to delimit paths. two null bytes between sets\n"
     "  --reverse, -r  sort clusters by creation time descending\n"
-    "  --version, -v  show the running program version number\n");
+    "  --version, -v  show the program version number\n");
 }
 
 uint8_t cli(int argc, char** argv) {
