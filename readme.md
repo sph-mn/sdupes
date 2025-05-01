@@ -7,7 +7,7 @@ at this point in time, many duplicate file finders are slow or overengineered. s
 find /home/myuser/directory-with-10000s-of-large-files | sdupes
 ~~~
 
-this lists excess duplicate files. the oldest file of each set is always left out except when --cluster is used.
+this lists excess duplicate files. the oldest file of each set is left out except when --cluster is used.
 if no duplicates are found, nothing is displayed.
 
 ## remove duplicates
@@ -16,7 +16,7 @@ sdupes can be used together with `xargs` and `rm` to remove duplicate files:
 find | sdupes | xargs -n 1 -d '\n' rm
 ~~~
 
-instead of xargs,the following shell script can be used.
+simpler than xargs, however, is the following shell script.
 
 nargs
 ~~~
@@ -63,8 +63,9 @@ this should create `exe/compiled/sdupes` which is the statically compiled final 
 
 # technical details
 * all input path names are loaded into memory. in my test, memory usage remained below 1GB for a 31200 files music library
-* duplicate checking is done in parallel for each group of files with equal size. the number of threads depends on the number of paths that are processed
+* duplicate checking is done in parallel for each group of files with equal size. the number of threads depends on the number of paths to be processed
 * tiny hashtable, set, and thread-pool implementations from [sph-sc-lib](https://github.com/sph-mn/sph-sc-lib) are used
+* hardlinks are not considered duplicates because they share the same inode
 
 # license
 [gpl3+](https://www.gnu.org/licenses/gpl-3.0.txt)
