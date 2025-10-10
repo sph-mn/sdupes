@@ -7,140 +7,142 @@
 #include <inttypes.h>
 /* a macro that defines hash-table data types for arbitrary key/value types,
 with linear probing for collision resolve and customizable hash and equal functions.
+the hash function must return return an index limited by hashtable-size.
 prime numbers from https://planetmath.org/goodhashtableprimes */
-uint32_t sph_hashtable_primes[] = { 53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317, 196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653, 100663319, 201326611, 402653189, 805306457, 1610612741 };
-uint32_t* sph_hashtable_primes_end = (sph_hashtable_primes + 25);
+#if (SIZE_MAX > 0xffffffffu)
+#define sph_hashtable_calculate_size_extra(n) n = (n | (n >> 32))
+#else
+#define sph_hashtable_calculate_size_extra n
+#endif
+
+#define sph_hashtable_empty 0
+#define sph_hashtable_full 1
 #define sph_hashtable_hash_integer(key, hashtable_size) (key % hashtable_size)
 #define sph_hashtable_equal_integer(key_a, key_b) (key_a == key_b)
 #define sph_hashtable_declare_type(name, key_type, value_type, hashtable_hash, hashtable_equal, size_factor) \
   typedef struct { \
     size_t size; \
+    size_t mask; \
     uint8_t* flags; \
     key_type* keys; \
     value_type* values; \
   } name##_t; \
-  size_t name##_calculate_size(size_t min_size) { \
-    min_size = (size_factor * min_size); \
-    uint32_t* primes; \
-    for (primes = sph_hashtable_primes; (primes <= sph_hashtable_primes_end); primes += 1) { \
-      if (min_size <= *primes) { \
-        return ((*primes)); \
-      }; \
+  size_t name##_calculate_size(size_t n) { \
+    n = (size_factor * n); \
+    if (n < 2) { \
+      n = 2; \
     }; \
-    /* if no prime has been found, make size at least an odd number */ \
-    return ((1 | min_size)); \
+    n = (n - 1); \
+    n = (n | (n >> 1)); \
+    n = (n | (n >> 2)); \
+    n = (n | (n >> 4)); \
+    n = (n | (n >> 8)); \
+    n = (n | (n >> 16)); \
+    sph_hashtable_calculate_size_extra(n); \
+    return ((1 + n)); \
   } \
-  uint8_t name##_new(size_t min_size, name##_t* result) { \
-    uint8_t* flags; \
-    key_type* keys; \
-    value_type* values; \
-    min_size = name##_calculate_size(min_size); \
-    flags = calloc(min_size, 1); \
-    if (!flags) { \
+  uint8_t name##_new(size_t minimum_size, name##_t* out) { \
+    name##_t a; \
+    size_t n; \
+    a.flags = 0; \
+    a.keys = 0; \
+    a.values = 0; \
+    n = name##_calculate_size(minimum_size); \
+    a.flags = calloc(n, 1); \
+    if (!a.flags) { \
       return (1); \
     }; \
-    keys = calloc(min_size, (sizeof(key_type))); \
-    if (!keys) { \
-      free(flags); \
+    a.keys = calloc(n, (sizeof(key_type))); \
+    if (!a.keys) { \
+      free((a.flags)); \
       return (1); \
     }; \
-    values = malloc((min_size * sizeof(value_type))); \
-    if (!values) { \
-      free(keys); \
-      free(flags); \
+    a.values = malloc((n * sizeof(value_type))); \
+    if (!a.values) { \
+      free((a.flags)); \
+      free((a.keys)); \
       return (1); \
     }; \
-    (*result).flags = flags; \
-    (*result).keys = keys; \
-    (*result).values = values; \
-    (*result).size = min_size; \
+    a.size = n; \
+    a.mask = (n - 1); \
+    *out = a; \
     return (0); \
   } \
+  void name##_clear(name##_t a) { memset((a.flags), 0, (a.size)); } \
   void name##_free(name##_t a) { \
     free((a.values)); \
     free((a.keys)); \
     free((a.flags)); \
   } \
-\
-  /** returns the address of the value in the hash table, 0 if it was not found */ \
   value_type* name##_get(name##_t a, key_type key) { \
-    size_t i; \
-    size_t hash_i; \
-    hash_i = hashtable_hash(key, (a.size)); \
-    i = hash_i; \
-    while ((i < a.size)) { \
-      if ((a.flags)[i]) { \
-        if (hashtable_equal(key, ((a.keys)[i]))) { \
-          return ((i + a.values)); \
-        }; \
-      } else { \
+    size_t table_size = a.size; \
+    size_t mask = a.mask; \
+    size_t index = hashtable_hash(key, table_size); \
+    size_t steps = 0; \
+    while ((steps < table_size)) { \
+      if ((a.flags)[index] == sph_hashtable_empty) { \
         return (0); \
       }; \
-      i += 1; \
-    }; \
-    /* wraps over */ \
-    i = 0; \
-    while ((i < hash_i)) { \
-      if ((a.flags)[i]) { \
-        if (hashtable_equal(key, ((a.keys)[i]))) { \
-          return ((i + a.values)); \
-        }; \
-      } else { \
-        return (0); \
+      if (((a.flags)[index] == sph_hashtable_full) && hashtable_equal(((a.keys)[index]), key)) { \
+        return ((&((a.values)[index]))); \
       }; \
-      i += 1; \
+      index = ((index + 1) & mask); \
+      steps += 1; \
     }; \
     return (0); \
   } \
-\
-  /** returns the address of the added or already included value, 0 if there is no space left in the hash table */ \
   value_type* name##_set(name##_t a, key_type key, value_type value) { \
-    size_t i; \
-    size_t hash_i; \
-    hash_i = hashtable_hash(key, (a.size)); \
-    i = hash_i; \
-    while ((i < a.size)) { \
-      if ((a.flags)[i]) { \
-        if (hashtable_equal(key, ((a.keys)[i]))) { \
-          return ((i + a.values)); \
-        } else { \
-          i += 1; \
-        }; \
-      } else { \
-        (a.flags)[i] = 1; \
-        (a.keys)[i] = key; \
-        (a.values)[i] = value; \
-        return ((i + a.values)); \
+    size_t table_size = a.size; \
+    size_t mask = a.mask; \
+    size_t index = hashtable_hash(key, table_size); \
+    size_t steps = 0; \
+    while ((steps < table_size)) { \
+      if (((a.flags)[index] == sph_hashtable_full) && hashtable_equal(((a.keys)[index]), key)) { \
+        return ((a.values + index)); \
       }; \
-    }; \
-    i = 0; \
-    while ((i < hash_i)) { \
-      if ((a.flags)[i]) { \
-        if (hashtable_equal(key, ((a.keys)[i]))) { \
-          return ((i + a.values)); \
-        } else { \
-          i += 1; \
-        }; \
-      } else { \
-        (a.flags)[i] = 1; \
-        (a.keys)[i] = key; \
-        (a.values)[i] = value; \
-        return ((i + a.values)); \
+      if (!((a.flags)[index] == sph_hashtable_full)) { \
+        (a.flags)[index] = sph_hashtable_full; \
+        (a.keys)[index] = key; \
+        (a.values)[index] = value; \
+        return ((a.values + index)); \
       }; \
+      index = ((index + 1) & mask); \
+      steps += 1; \
     }; \
     return (0); \
   } \
-\
-  /** returns 0 if the element was removed, 1 if it was not found. \
-         only needs to set flag to zero */ \
   uint8_t name##_remove(name##_t a, key_type key) { \
-    value_type* value = name##_get(a, key); \
-    if (value) { \
-      (a.flags)[(value - a.values)] = 0; \
-      return (0); \
-    } else { \
-      return (1); \
+    size_t table_size = a.size; \
+    size_t mask = a.mask; \
+    size_t index = hashtable_hash(key, table_size); \
+    while (1) { \
+      if (!((a.flags)[index] == sph_hashtable_full)) { \
+        return (1); \
+      }; \
+      if (hashtable_equal(((a.keys)[index]), key)) { \
+        break; \
+      }; \
+      index = ((index + 1) & mask); \
     }; \
-  } \
-  void name##_clear(name##_t a) { memset((a.flags), 0, (a.size)); }
+    size_t hole_index = index; \
+    size_t home_index; \
+    size_t distance_hole; \
+    size_t distance_index; \
+    while (1) { \
+      index = ((index + 1) & mask); \
+      if (!((a.flags)[index] == sph_hashtable_full)) { \
+        (a.flags)[hole_index] = sph_hashtable_empty; \
+        return (0); \
+      }; \
+      home_index = hashtable_hash(((a.keys)[index]), table_size); \
+      distance_hole = ((hole_index - home_index) & mask); \
+      distance_index = ((index - home_index) & mask); \
+      if (distance_hole <= distance_index) { \
+        (a.keys)[hole_index] = (a.keys)[index]; \
+        (a.values)[hole_index] = (a.values)[index]; \
+        hole_index = index; \
+      }; \
+    }; \
+    return (1); \
+  }
 #endif

@@ -14,199 +14,173 @@
  * primes from https://planetmath.org/goodhashtableprimes
  * automatic resizing is not implemented. resizing can be done by re-inserting each value into a larger set */
 #include <stdlib.h>
+#include <string.h>
 #include <inttypes.h>
-uint32_t sph_set_primes[] = { 53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317, 196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843, 50331653, 100663319, 201326611, 402653189, 805306457, 1610612741 };
-uint32_t* sph_set_primes_end = (sph_set_primes + 25);
+#if (SIZE_MAX > 0xffffffffu)
+#define sph_set_calculate_size_extra(n) n = (n | (n >> 32))
+#else
+#define sph_set_calculate_size_extra n
+#endif
+
 #define sph_set_hash_integer(value, hashtable_size) (value % hashtable_size)
 #define sph_set_equal_integer(value_a, value_b) (value_a == value_b)
-#define sph_set_declare_type_shared_1(name, value_type, set_hash, set_equal, null, size_factor) \
+#define sph_set_declare_type(name, value_type, set_hash, set_equal, null, size_factor) \
   typedef struct { \
     size_t size; \
+    size_t mask; \
     value_type* values; \
+    uint8_t* occupied; \
+    uint8_t nullable; \
   } name##_t; \
-  size_t name##_calculate_size(size_t min_size) { \
-    min_size = (size_factor * min_size); \
-    uint32_t* primes; \
-    for (primes = sph_set_primes; (primes <= sph_set_primes_end); primes += 1) { \
-      if (min_size <= *primes) { \
-        return ((*primes)); \
-      }; \
-    }; \
-    /* if no prime has been found, make size at least an odd number */ \
-    return ((1 | min_size)); \
+  uint8_t name##_occupied_get(const uint8_t* bitmap, size_t index) { \
+    size_t byte_index; \
+    size_t bit_index; \
+    uint8_t byte_value; \
+    byte_index = (index >> 3); \
+    bit_index = (index & 7); \
+    byte_value = bitmap[byte_index]; \
+    return (((byte_value >> bit_index) & 1)); \
   } \
-  void name##_clear(name##_t a) { \
+  void name##_occupied_set(uint8_t* bitmap, size_t index) { \
+    size_t byte_index; \
+    size_t bit_index; \
+    byte_index = (index >> 3); \
+    bit_index = (index & 7); \
+    bitmap[byte_index] = (bitmap[byte_index] | ((uint8_t)((1u << bit_index)))); \
+  } \
+  void name##_occupied_clear(uint8_t* bitmap, size_t index) { \
+    size_t byte_index; \
+    size_t bit_index; \
+    byte_index = (index >> 3); \
+    bit_index = (index & 7); \
+    bitmap[byte_index] = (((uint8_t)(bitmap[byte_index])) & ((uint8_t)(~(1u << bit_index)))); \
+  } \
+  size_t name##_calculate_size(size_t n) { \
+    n = (size_factor * n); \
+    if (n < 2) { \
+      n = 2; \
+    }; \
+    n = (n - 1); \
+    n = (n | (n >> 1)); \
+    n = (n | (n >> 2)); \
+    n = (n | (n >> 4)); \
+    n = (n | (n >> 8)); \
+    n = (n | (n >> 16)); \
+    sph_set_calculate_size_extra(n); \
+    return ((1 + n)); \
+  } \
+  void name##_clear(name##_t* a) { \
+    size_t bytes; \
+    bytes = ((7 + a->size) >> 3); \
+    a->nullable = 0; \
+    memset((a->occupied), 0, bytes); \
+  } \
+  void name##_free(name##_t a) { \
+    free((a.occupied)); \
+    free((a.values)); \
+  } \
+  uint8_t name##_new(size_t min_size, name##_t* out) { \
+    name##_t a; \
+    size_t bytes; \
+    a.size = name##_calculate_size(min_size); \
+    a.values = malloc((a.size * sizeof(value_type))); \
+    if (!a.values) { \
+      return (1); \
+    }; \
+    bytes = ((a.size + 7) >> 3); \
+    a.occupied = calloc(bytes, 1); \
+    if (!a.occupied) { \
+      free((a.values)); \
+      return (1); \
+    }; \
+    a.nullable = 0; \
+    a.mask = (a.size - 1); \
+    *out = a; \
+    return (0); \
+  } \
+  value_type* name##_get(name##_t a, value_type value) { \
     size_t i; \
-    for (i = 0; (i < a.size); i = (1 + i)) { \
-      (a.values)[i] = null; \
+    size_t j; \
+    if (set_equal(value, null)) { \
+      return ((a.nullable ? a.values : 0)); \
     }; \
+    i = set_hash(value, (a.size)); \
+    j = 0; \
+    while ((j < a.size)) { \
+      if (name##_occupied_get((a.occupied), i)) { \
+        if (set_equal(((a.values)[i]), value)) { \
+          return ((a.values + i)); \
+        }; \
+      } else { \
+        return (0); \
+      }; \
+      i = ((i + 1) & a.mask); \
+      j += 1; \
+    }; \
+    return (0); \
   } \
-  void name##_free(name##_t a) { free((a.values)); }
-#define sph_set_declare_type_shared_2(name, value_type, set_hash, set_equal, null, size_factor) \
-  /** returns 0 if the element was removed, 1 if it was not found */ \
-  uint8_t name##_remove(name##_t a, value_type value) { \
-    value_type* v = name##_get(a, value); \
-    if (v) { \
-      *v = null; \
+  value_type* name##_add(name##_t* a, value_type value) { \
+    if (set_equal(value, null)) { \
+      a->nullable = 1; \
+      return ((a->values)); \
+    }; \
+    size_t i = set_hash(value, (a->size)); \
+    size_t j = 0; \
+    uint8_t occupied = 0; \
+    while ((j < a->size)) { \
+      occupied = name##_occupied_get((a->occupied), i); \
+      if (occupied && set_equal(((a->values)[i]), value)) { \
+        return ((&((a->values)[i]))); \
+      }; \
+      if (!occupied) { \
+        (a->values)[i] = value; \
+        name##_occupied_set((a->occupied), i); \
+        return ((&((a->values)[i]))); \
+      }; \
+      i = ((i + 1) & a->mask); \
+      j += 1; \
+    }; \
+    return (0); \
+  } \
+  uint8_t name##_remove(name##_t* a, value_type value) { \
+    if (set_equal(value, null)) { \
+      if (!a->nullable) { \
+        return (1); \
+      }; \
+      a->nullable = 0; \
       return (0); \
-    } else { \
-      return (1); \
     }; \
+    size_t i = set_hash(value, (a->size)); \
+    size_t j = 0; \
+    size_t h = 0; \
+    size_t dj = 0; \
+    size_t di = 0; \
+    size_t found = 0; \
+    while (!found) { \
+      if (!name##_occupied_get((a->occupied), i)) { \
+        return (1); \
+      }; \
+      if (set_equal(((a->values)[i]), value)) { \
+        j = i; \
+        found = 1; \
+      } else { \
+        i = ((i + 1) & a->mask); \
+      }; \
+    }; \
+    while (1) { \
+      i = ((i + 1) & a->mask); \
+      if (!name##_occupied_get((a->occupied), i)) { \
+        name##_occupied_clear((a->occupied), j); \
+        return (0); \
+      }; \
+      h = set_hash(((a->values)[i]), (a->size)); \
+      dj = ((j - h) & a->mask); \
+      di = ((i - h) & a->mask); \
+      if (dj <= di) { \
+        (a->values)[j] = (a->values)[i]; \
+        j = i; \
+      }; \
+    }; \
+    return (1); \
   }
-#define sph_set_declare_type_with_null(name, value_type, set_hash, set_equal, null, notnull, size_factor) \
-  /** returns 0 on success or 1 if the memory allocation failed */ \
-  uint8_t name##_new(size_t min_size, name##_t* result) { \
-    name##_t temp; \
-    temp.size = (1 + name##_calculate_size(min_size)); \
-    temp.values = calloc((temp.size), (sizeof(value_type))); \
-    if (!temp.values) { \
-      return (1); \
-    }; \
-    name##_clear(temp); \
-    *result = temp; \
-    return (0); \
-  } \
-\
-  /** returns the address of the value or 0 if it was not found. \
-         if value is the null value and exists, then address points to the notnull value */ \
-  value_type* name##_get(name##_t a, value_type value) { \
-    size_t i; \
-    size_t hash_i; \
-    if (set_equal(null, value)) { \
-      return ((set_equal(notnull, (*(a.values))) ? a.values : 0)); \
-    }; \
-    hash_i = (1 + set_hash(value, (a.size - 1))); \
-    i = hash_i; \
-    while ((i < a.size)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        return (0); \
-      } else { \
-        if (set_equal(value, ((a.values)[i]))) { \
-          return ((i + a.values)); \
-        }; \
-      }; \
-      i += 1; \
-    }; \
-    /* wraps over */ \
-    i = 1; \
-    while ((i < hash_i)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        return (0); \
-      } else { \
-        if (set_equal(value, ((a.values)[i]))) { \
-          return ((i + a.values)); \
-        }; \
-      }; \
-      i += 1; \
-    }; \
-    return (0); \
-  } \
-\
-  /** add if not already exists. returns the address of the existing or new value or 0 if no space is left */ \
-  value_type* name##_add(name##_t a, value_type value) { \
-    size_t i; \
-    size_t hash_i; \
-    if (set_equal(null, value)) { \
-      *(a.values) = notnull; \
-      return ((a.values)); \
-    }; \
-    hash_i = (1 + set_hash(value, (a.size - 1))); \
-    i = hash_i; \
-    while ((i < a.size)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        if (!set_equal(value, ((a.values)[i]))) { \
-          (a.values)[i] = value; \
-        }; \
-        return ((i + a.values)); \
-      }; \
-      i += 1; \
-    }; \
-    /* wraps over */ \
-    i = 1; \
-    while ((i < hash_i)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        if (!set_equal(value, ((a.values)[i]))) { \
-          (a.values)[i] = value; \
-        }; \
-        return ((i + a.values)); \
-      }; \
-      i += 1; \
-    }; \
-    return (0); \
-  }
-#define sph_set_declare_type_without_null(name, value_type, set_hash, set_equal, null, size_factor) \
-  /** returns 0 on success or 1 if the memory allocation failed */ \
-  uint8_t name##_new(size_t min_size, name##_t* result) { \
-    value_type* values; \
-    min_size = name##_calculate_size(min_size); \
-    values = calloc(min_size, (sizeof(value_type))); \
-    if (!values) { \
-      return (1); \
-    }; \
-    (*result).values = values; \
-    (*result).size = min_size; \
-    return (0); \
-  } \
-\
-  /** returns the address of the value or 0 if it was not found */ \
-  value_type* name##_get(name##_t a, value_type value) { \
-    size_t i; \
-    size_t hash_i; \
-    hash_i = set_hash(value, (a.size)); \
-    i = hash_i; \
-    while ((i < a.size)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        return (0); \
-      } else { \
-        if (set_equal(value, ((a.values)[i]))) { \
-          return ((i + a.values)); \
-        }; \
-      }; \
-      i += 1; \
-    }; \
-    /* wraps over */ \
-    i = 0; \
-    while ((i < hash_i)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        return (0); \
-      } else { \
-        if (set_equal(value, ((a.values)[i]))) { \
-          return ((i + a.values)); \
-        }; \
-      }; \
-      i += 1; \
-    }; \
-    return (0); \
-  } \
-\
-  /** returns the address of the value or 0 if no space is left */ \
-  value_type* name##_add(name##_t a, value_type value) { \
-    size_t i; \
-    size_t hash_i; \
-    hash_i = set_hash(value, (a.size)); \
-    i = hash_i; \
-    while ((i < a.size)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        (a.values)[i] = value; \
-        return ((i + a.values)); \
-      }; \
-      i += 1; \
-    }; \
-    /* wraps over */ \
-    i = 0; \
-    while ((i < hash_i)) { \
-      if (set_equal(null, ((a.values)[i]))) { \
-        (a.values)[i] = value; \
-        return ((i + a.values)); \
-      }; \
-      i += 1; \
-    }; \
-    return (0); \
-  }
-#define sph_set_declare_type(name, value_type, hash, equal, null, notnull, size_factor) sph_set_declare_type_shared_1(name, value_type, hash, equal, null, size_factor) \
-  sph_set_declare_type_with_null(name, value_type, hash, equal, null, notnull, size_factor) \
-    sph_set_declare_type_shared_2(name, value_type, hash, equal, null, size_factor)
-#define sph_set_declare_type_nonull(name, value_type, hash, equal, null, size_factor) sph_set_declare_type_shared_1(name, value_type, hash, equal, null, size_factor) \
-  sph_set_declare_type_without_null(name, value_type, hash, equal, null, size_factor) \
-    sph_set_declare_type_shared_2(name, value_type, hash, equal, null, size_factor)
 #endif

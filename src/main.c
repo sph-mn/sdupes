@@ -94,7 +94,7 @@ sph_hashtable_declare_type(ids_by_size, off_t, ids_t, sph_hashtable_hash_integer
 sph_hashtable_declare_type(id_by_checksum, checksum_t, id_t, checksum_hash, checksum_equal, 2);
 sph_hashtable_declare_type(ids_by_checksum, checksum_t, ids_t, checksum_hash, checksum_equal, 2);
 device_and_inode_t device_and_inode_null = {0};
-sph_set_declare_type_nonull(device_and_inode_set, device_and_inode_t, device_and_inode_hash, device_and_inode_equal, device_and_inode_null, 2);
+sph_set_declare_type(device_and_inode_set, device_and_inode_t, device_and_inode_hash, device_and_inode_equal, device_and_inode_null, 2);
 sph_thread_pool_t thread_pool;
 
 uint8_t* simple_basename(uint8_t* path) {
@@ -371,7 +371,7 @@ ids_by_size_t get_ids_by_size(char** paths, size_t paths_size, id_t* cluster_cou
       device_and_inode.inode = stats[i].st_ino;
       if (!device_and_inode_set_get(device_and_inode_set, device_and_inode)) {
         ids_add_with_resize((*ids), i);
-        device_and_inode_set_add(device_and_inode_set, device_and_inode);
+        device_and_inode_set_add(&device_and_inode_set, device_and_inode);
       }
       continue;
     }
@@ -381,10 +381,10 @@ ids_by_size_t get_ids_by_size(char** paths, size_t paths_size, id_t* cluster_cou
     ids_by_size_set(ids_by_size, stats[i].st_size, new_ids);
     device_and_inode.device = stats[*id].st_dev;
     device_and_inode.inode = stats[*id].st_ino;
-    device_and_inode_set_add(device_and_inode_set, device_and_inode);
+    device_and_inode_set_add(&device_and_inode_set, device_and_inode);
     device_and_inode.device = stats[i].st_dev;
     device_and_inode.inode = stats[i].st_ino;
-    device_and_inode_set_add(device_and_inode_set, device_and_inode);
+    device_and_inode_set_add(&device_and_inode_set, device_and_inode);
     *cluster_count += 1;
   }
   free(stats);
