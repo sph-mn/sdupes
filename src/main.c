@@ -12,11 +12,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdatomic.h>
-#include <foreign/murmur3.c>
-#include <foreign/sph-sc-lib/array4.h>
-#include <foreign/sph-sc-lib/hashtable.h>
-#include <foreign/sph-sc-lib/set.h>
-#include <foreign/sph-sc-lib/queue.h>
+#include <murmur3.c>
+#include <sph/array4.h>
+#include <sph/hashtable.h>
+#include <sph/set.h>
+#include <sph/queue.h>
 #include <pthread.h>
 
 typedef struct {uint64_t data[6];} checksum_t;
@@ -64,8 +64,7 @@ typedef struct sph_thread_pool_task_t {
 } sph_thread_pool_task_t;
 
 #define sph_thread_pool_task_t_defined
-#include <foreign/sph-sc-lib/thread-pool.h>
-#include <foreign/sph-sc-lib/thread-pool.c>
+#include <sph/thread-pool.c>
 #define paths_size_min 8192
 #define path_size_min 512
 #define paths_data_size_min paths_size_min * path_size_min

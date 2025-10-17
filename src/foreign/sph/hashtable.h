@@ -5,10 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-/* a macro that defines hash-table data types for arbitrary key/value types,
-with linear probing for collision resolve and customizable hash and equal functions.
-the hash function must return return an index limited by hashtable-size.
-prime numbers from https://planetmath.org/goodhashtableprimes */
 #if (SIZE_MAX > 0xffffffffu)
 #define sph_hashtable_calculate_size_extra(n) n = (n | (n >> 32))
 #else

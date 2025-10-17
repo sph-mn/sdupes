@@ -1,7 +1,7 @@
 #!/bin/sh
 
 sph_sc_root="$1"
-destination="$PWD/src/foreign/sph-sc-lib"
+destination="$PWD/src/foreign/sph"
 source="$sph_sc_root/src/c-precompiled/sph"
 
 if test -d "$destination"
