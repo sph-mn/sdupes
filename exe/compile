@@ -1,11 +1,15 @@
-#!/bin/sh
+#!/bin/sh -e
 
-# development
-#compiler=gcc
-#compiler_options="-Wunused-label -Wunused-value -Wfatal-errors -g3 -O0 -fno-inline -fstack-protector-all -fno-omit-frame-pointer -std=c11 -static -pthread -I src"
+if command -v musl-gcc >/dev/null; then
+  compiler=musl-gcc
+else
+  compiler=gcc
+fi
 
-if command -v musl-gcc > /dev/null; then compiler=musl-gcc; else compiler=gcc; fi
-compiler_options="-Wunused-label -Wunused-value -Wunused-variable -Wfatal-errors -std=c11 -O3 -static -pthread -I src/foreign"
-mkdir -p exe/compiled
-$compiler $compiler_options src/main.c -o exe/compiled/sdupes
-chmod +x exe/compiled/sdupes
+target_dir=exe/compiled
+src_dir=src
+compiler_options="-std=c17 -pedantic-errors -D_POSIX_C_SOURCE=200809L -D_FILE_OFFSET_BITS=64 -O3 -static -pthread -I $src_dir/foreign"
+
+mkdir -p "$target_dir"
+$compiler $compiler_options "$src_dir/main.c" -o "$target_dir/sdupes"
+chmod +x "$target_dir/sdupes"

@@ -1,8 +1,7 @@
 #!/bin/sh
 
 sph_sc_root="$1"
-destination="$PWD/src/foreign/sph"
-source="$sph_sc_root/src/c-precompiled/sph"
+destination="$PWD/src/foreign/sdupes/sph"
 
 if test -d "$destination"
 then
@@ -11,5 +10,9 @@ else
   mkdir -p "$destination"
 fi
 
-cd "$source"
-cp hashtable.h array4.h set.h queue.h thread-pool.h thread-pool.c "$destination"
+cd "$sph_sc_root/src/c-precompiled/sph"
+
+cp status.h hashtable.h array.h set.h queue.h thread-pool.h thread-pool.c "$destination"
+
+# replace include paths in copied files
+sed -i 's@#include <sph/@#include <sdupes/sph/@g' "$destination"/*
