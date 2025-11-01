@@ -1,10 +1,10 @@
 
-#ifndef sph_thread_pool
-#define sph_thread_pool
+#ifndef sph_thread_pool_c_included
+#define sph_thread_pool_c_included
 
 #include <errno.h>
 #include <stdlib.h>
-#include <sph/thread-pool.h>
+#include <sdupes/sph/thread-pool.h>
 int sph_thread_pool_destroy(sph_thread_pool_t* a) {
   int result = 0;
   pthread_mutex_lock((&(a->queue_mutex)));

@@ -1,6 +1,6 @@
 
-#ifndef sph_set_h
-#define sph_set_h
+#ifndef sph_set_h_included
+#define sph_set_h_included
 
 /* a macro that defines set data types and related functions for arbitrary value types.
  * compared to hashtable.c, this uses less than half the space and operations are faster (about 20% in first tests)

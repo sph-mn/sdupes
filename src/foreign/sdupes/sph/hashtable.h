@@ -1,6 +1,6 @@
 
-#ifndef sph_hashtable_h
-#define sph_hashtable_h
+#ifndef sph_hashtable_h_included
+#define sph_hashtable_h_included
 
 #include <stdlib.h>
 #include <string.h>

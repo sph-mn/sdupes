@@ -1,6 +1,6 @@
 
-#ifndef sph_queue_h
-#define sph_queue_h
+#ifndef sph_queue_h_included
+#define sph_queue_h_included
 
 /* a fifo queue with the operations enqueue and dequeue that can enqueue custom struct types and a mix of types.
    # example usage
