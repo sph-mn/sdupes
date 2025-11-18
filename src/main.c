@@ -86,11 +86,13 @@ typedef struct sph_thread_pool_task_t {
 #define paths_per_thread 250
 
 #define ids_add_with_resize(a, id) \
-  if (a.used == a.size) { \
-    status = ids_resize(&a, 2 * a.size); \
-    if (status_is_failure) memory_error; \
-  } \
-  else {sph_array_add(a, id);}
+  do { \
+    if ((a).used == (a).size) { \
+      status = ids_resize(&(a), 2 * (a).size); \
+      if (status_is_failure) memory_error; \
+    } \
+    sph_array_add(a, id); \
+  } while (0)
 
 sph_hashtable_declare_type(id_by_size, off_t, id_t, sph_hashtable_hash_integer, sph_hashtable_equal_integer, 2)
 sph_hashtable_declare_type(ids_by_size, off_t, ids_t, sph_hashtable_hash_integer, sph_hashtable_equal_integer, 2)
@@ -244,7 +246,7 @@ uint8_t cli(int argc, char** argv) {
     else if ('n' == opt) options = (flag_ignore_filenames | options);
     else if ('r' == opt) options = (flag_reverse | options);
     else if ('v' == opt) {
-      printf("v1.6\n");
+      printf("v1.7\n");
       options = (flag_exit | options);
       break;
     };
@@ -443,7 +445,7 @@ ids_by_checksum_t get_ids_by_checksum(char** paths, ids_t ids) {
   if (id_by_checksum_new(ids.used, &id_by_checksum) || ids_by_checksum_new(ids.used, &ids_by_checksum)) {
     memory_error;
   };
-  for (size_t i; i < ids.used; i += 1) {
+  for (size_t i = 0; i < ids.used; i += 1) {
     id = sph_array_get(ids, i);
     if (get_checksum(paths[id], &checksum)) display_error("could not calculate checksum for %s", paths[id]);
     checksum_id = id_by_checksum_get(id_by_checksum, checksum);
@@ -530,9 +532,10 @@ void display_duplicates(char** paths, ids_t ids, char delimiter, uint8_t display
   // assumes that ids contains at least two entries
   static uint8_t stdout_empty = 1;
   pthread_mutex_lock(&stdout_mutex);
-  if (1 < ids.size && sort_ids_by_ctime(ids, paths, reverse)) goto exit;
+  if (1 < ids.used && sort_ids_by_ctime(ids, paths, reverse)) goto exit;
   id_t i;
   if (display_cluster) {
+    i = 0;
     if (stdout_empty) stdout_empty = 0;
     else putchar(delimiter);
   } else {
