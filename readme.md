@@ -25,8 +25,7 @@ nargs
 # for each newline separated line, read from standard input and call a command with line as argument.
 # example: "find . | sdupes | nargs echo"
 
-while read line
-do
+while IFS= read -r line; do
   "$@" "$line"
 done
 ~~~
